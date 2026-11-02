@@ -1,0 +1,24 @@
+{
+  "name": "isocode-assing",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "start": "node backend/src/server.js",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"BACKEND,FRONTEND\" -c \"blue.bold,green.bold\" \"npm run --prefix backend dev\" \"npm run --prefix frontend dev\"",
+    "build": "npm run --prefix frontend build",
+    "seed": "node backend/src/db/seed.js",
+    "test": "npm run --prefix backend test",
+    "package-zip": "node scripts/generate_submission_zip.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "concurrently": "^10.0.6",
+    "pdfkit": "^0.20.2"
+  }
+}
