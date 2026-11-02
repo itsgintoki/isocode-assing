@@ -1,34 +1,36 @@
 import React, { useState } from 'react';
 import { 
   UploadCloud, 
-  FileText, 
   CheckCircle2, 
   AlertTriangle, 
   Sparkles, 
-  Copy, 
-  ArrowRight,
-  ShieldAlert,
-  Layers,
   FileCheck2
 } from 'lucide-react';
+import { Requisition, User } from '../types';
+
+interface BulkUploadProps {
+  currentRequisition: Requisition | null;
+  currentUser: User | null;
+  onUploadSuccess?: () => void;
+}
 
 export default function BulkUpload({
   currentRequisition,
   currentUser,
   onUploadSuccess
-}) {
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadResults, setUploadResults] = useState(null);
-  const [errorMessage, setErrorMessage] = useState(null);
-  const [isDragOver, setIsDragOver] = useState(false);
+}: BulkUploadProps) {
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadResults, setUploadResults] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
-  const handleFileChange = (e) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     setSelectedFiles(files);
   };
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -60,7 +62,7 @@ export default function BulkUpload({
       if (!res.ok) throw new Error(data.error || 'Bulk upload failed');
       setUploadResults(data.results);
       if (onUploadSuccess) onUploadSuccess();
-    } catch (err) {
+    } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
       setIsUploading(false);
@@ -74,7 +76,6 @@ export default function BulkUpload({
     setErrorMessage(null);
     setUploadResults(null);
 
-    // Create synthetic Blob files for diverse sample CVs
     const samplePiles = [
       {
         filename: 'Ritika_Bansal_Senior_Java.txt',
@@ -125,7 +126,7 @@ Notice Period: 90 days. Current CTC: 6.0 LPA, Expected: 8.5 LPA.`
       if (!res.ok) throw new Error(data.error || 'Sample upload failed');
       setUploadResults(data.results);
       if (onUploadSuccess) onUploadSuccess();
-    } catch (err) {
+    } catch (err: any) {
       setErrorMessage(err.message);
     } finally {
       setIsUploading(false);
@@ -179,7 +180,10 @@ Notice Period: 90 days. Current CTC: 6.0 LPA, Expected: 8.5 LPA.`
             transition: 'all 0.2s ease',
             cursor: 'pointer'
           }}
-          onClick={() => document.getElementById('cv-file-input').click()}
+          onClick={() => {
+            const el = document.getElementById('cv-file-input');
+            if (el) el.click();
+          }}
         >
           <input
             id="cv-file-input"
@@ -202,7 +206,11 @@ Notice Period: 90 days. Current CTC: 6.0 LPA, Expected: 8.5 LPA.`
           <button 
             type="button" 
             className="btn btn-primary btn-sm" 
-            onClick={(e) => { e.stopPropagation(); document.getElementById('cv-file-input').click(); }}
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              const el = document.getElementById('cv-file-input');
+              if (el) el.click();
+            }}
           >
             Browse Files from Computer
           </button>
@@ -260,7 +268,7 @@ Notice Period: 90 days. Current CTC: 6.0 LPA, Expected: 8.5 LPA.`
                 Duplicate Profile Alerts:
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {uploadResults.duplicatesDetected.map((dup, idx) => (
+                {uploadResults.duplicatesDetected.map((dup: any, idx: number) => (
                   <div 
                     key={idx}
                     style={{
@@ -293,7 +301,7 @@ Notice Period: 90 days. Current CTC: 6.0 LPA, Expected: 8.5 LPA.`
                 New Candidate Profiles Generated & AI Scored:
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {uploadResults.successfulCandidates.map((c, idx) => (
+                {uploadResults.successfulCandidates.map((c: any, idx: number) => (
                   <div
                     key={idx}
                     style={{

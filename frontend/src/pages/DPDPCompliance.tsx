@@ -11,20 +11,31 @@ import {
   Download,
   Search
 } from 'lucide-react';
+import { User, AuditLogEntry, ConsentData } from '../types';
+
+interface DPDPComplianceProps {
+  currentUser: User | null;
+}
+
+interface ErasureReceipt {
+  candidateId: string;
+  receipt: string;
+  erasedAt: string;
+}
 
 export default function DPDPCompliance({
   currentUser
-}) {
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [consentData, setConsentData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [errorNotice, setErrorNotice] = useState(null);
+}: DPDPComplianceProps) {
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [consentData, setConsentData] = useState<ConsentData | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
   // Erasure form state
-  const [selectedCandidateId, setSelectedCandidateId] = useState('');
-  const [erasureReason, setErasureReason] = useState('Candidate exercised Right to Erasure under DPDP Act 2023 Section 12');
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [erasureReceipt, setErasureReceipt] = useState(null);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string>('');
+  const [erasureReason, setErasureReason] = useState<string>('Candidate exercised Right to Erasure under DPDP Act 2023 Section 12');
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [erasureReceipt, setErasureReceipt] = useState<ErasureReceipt | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -44,8 +55,8 @@ export default function DPDPCompliance({
 
       setAuditLogs(logs.logs || []);
       setConsentData(consents);
-    } catch (err) {
-      setErrorNotice(err.message);
+    } catch (err: any) {
+      setErrorNotice(err.message || 'Failed to fetch compliance logs');
     } finally {
       setLoading(false);
     }
@@ -55,7 +66,7 @@ export default function DPDPCompliance({
     fetchData();
   }, [currentUser?.id]);
 
-  const handleExecuteErasure = async (e) => {
+  const handleExecuteErasure = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCandidateId) return;
 
@@ -86,8 +97,8 @@ export default function DPDPCompliance({
       setErasureReceipt(data.result);
       setSelectedCandidateId('');
       fetchData();
-    } catch (err) {
-      setErrorNotice(err.message);
+    } catch (err: any) {
+      setErrorNotice(err.message || 'Erasure execution error');
     } finally {
       setIsDeleting(false);
     }

@@ -5,15 +5,21 @@ import {
   AlertTriangle, 
   HelpCircle, 
   Send, 
-  ShieldCheck, 
   FileText, 
   UserCheck, 
-  Calendar, 
-  DollarSign, 
-  Clock, 
-  Check, 
   Quote
 } from 'lucide-react';
+import { Candidate, Requisition, User, CriterionEvaluation } from '../types';
+
+interface CandidateModalProps {
+  candidate: Candidate;
+  evaluation: any;
+  requisition: Requisition | null;
+  onClose: () => void;
+  onVerifyCandidate: (candidateId: string, notes: string) => Promise<void>;
+  onSubmitToClient: (candidateId: string) => Promise<void>;
+  currentUser?: User | null;
+}
 
 export default function CandidateModal({
   candidate,
@@ -23,15 +29,15 @@ export default function CandidateModal({
   onVerifyCandidate,
   onSubmitToClient,
   currentUser
-}) {
-  const [recruiterNotes, setRecruiterNotes] = useState(evaluation?.recruiter_notes || '');
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState(null);
+}: CandidateModalProps) {
+  const [recruiterNotes, setRecruiterNotes] = useState<string>(evaluation?.recruiter_notes || '');
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   if (!candidate || !evaluation) return null;
 
-  const breakdown = evaluation.breakdown || [];
+  const breakdown: CriterionEvaluation[] = evaluation.breakdown || [];
   const isVerified = evaluation.recruiter_verified === 1;
 
   const handleVerify = async () => {
@@ -40,7 +46,7 @@ export default function CandidateModal({
     try {
       await onVerifyCandidate(candidate.id, recruiterNotes);
       setMessage({ type: 'success', text: 'Candidate successfully verified by recruiter!' });
-    } catch (err) {
+    } catch (err: any) {
       setMessage({ type: 'error', text: err.message });
     } finally {
       setIsVerifying(false);
@@ -53,7 +59,7 @@ export default function CandidateModal({
     try {
       await onSubmitToClient(candidate.id);
       setMessage({ type: 'success', text: 'Candidate submitted to Client Shortlist Portal!' });
-    } catch (err) {
+    } catch (err: any) {
       setMessage({ type: 'error', text: err.message });
     } finally {
       setIsSubmitting(false);

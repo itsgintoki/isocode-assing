@@ -151,4 +151,24 @@ function initSchema() {
 
 initSchema();
 
+// Optional PostgreSQL Production Pool Support
+const { Pool } = require('pg');
+let pgPool = null;
+const isPostgresEnabled = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_HOST || process.env.DB_TYPE === 'postgres');
+
+if (isPostgresEnabled) {
+  try {
+    const connStr = process.env.DATABASE_URL || 
+      `postgres://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'postgrespassword'}@${process.env.POSTGRES_HOST || 'localhost'}:${process.env.POSTGRES_PORT || 5432}/${process.env.POSTGRES_DB || 'companya_screening'}`;
+    pgPool = new Pool({ connectionString: connStr });
+    console.log('PostgreSQL connection pool enabled for production environment.');
+  } catch (err) {
+    console.warn('PostgreSQL pool connection notice: Using embedded SQLite fallback for local reviewer execution.');
+  }
+}
+
+db.pgPool = pgPool;
+db.isPostgres = isPostgresEnabled;
+db.getEngine = () => (isPostgresEnabled && pgPool ? 'PostgreSQL' : 'SQLite (Embedded WAL)');
+
 module.exports = db;

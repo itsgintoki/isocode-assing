@@ -9,9 +9,22 @@ import {
   BarChart3, 
   RotateCcw,
   Sparkles,
-  ChevronDown,
   Building2
 } from 'lucide-react';
+import { User, Requisition } from '../types';
+
+interface NavbarProps {
+  currentUser: User | null;
+  users: User[];
+  onSwitchUser: (userId: string) => void;
+  currentRequisition: Requisition | null;
+  requisitions: Requisition[];
+  onSelectRequisition: (reqId: string) => void;
+  activeTab: string;
+  onSelectTab: (tab: string) => void;
+  onResetData: () => void;
+  isResetting: boolean;
+}
 
 export default function Navbar({
   currentUser,
@@ -19,12 +32,12 @@ export default function Navbar({
   onSwitchUser,
   currentRequisition,
   requisitions,
-  onSelectRequisition,
-  activeTab,
   onSelectTab,
+  activeTab,
+  onSelectRequisition,
   onResetData,
   isResetting
-}) {
+}: NavbarProps) {
   return (
     <header className="navbar">
       <div className="navbar-inner">

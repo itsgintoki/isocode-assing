@@ -420,10 +420,13 @@ function extractScorecardFromJD(rawJdText, title = '') {
 async function callLLM(prompt, systemPrompt = '') {
   const geminiKey = process.env.GEMINI_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
+  const preferredModel = (process.env.AI_MODEL || '').trim();
 
   if (geminiKey) {
+    // Support latest Gemini 2.0 Flash generation by default with 1.5 fallback
+    const geminiModel = preferredModel.includes('gemini') ? preferredModel : 'gemini-2.0-flash';
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -436,13 +439,32 @@ async function callLLM(prompt, systemPrompt = '') {
         const data = await res.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return JSON.parse(text);
+      } else {
+        // Fallback to gemini-1.5-flash if 2.0 endpoint not provisioned on given key
+        const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+        const fallbackRes = await fetch(fallbackUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `${systemPrompt}\n\n${prompt}` }] }],
+            generationConfig: { responseMimeType: 'application/json' }
+          })
+        });
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          const fallbackText = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (fallbackText) return JSON.parse(fallbackText);
+        }
       }
     } catch (e) {
-      console.warn('Gemini API call failed, falling back to local NLP engine:', e.message);
+      console.warn('Gemini API call notice, falling back to local NLP engine:', e.message);
     }
   }
 
   if (openaiKey) {
+    const openaiModel = preferredModel.includes('gpt') || preferredModel.includes('o1') || preferredModel.includes('o3') 
+      ? preferredModel 
+      : 'gpt-4o-mini';
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -451,7 +473,7 @@ async function callLLM(prompt, systemPrompt = '') {
           'Authorization': `Bearer ${openaiKey}`
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: openaiModel,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt }
@@ -465,7 +487,38 @@ async function callLLM(prompt, systemPrompt = '') {
         if (content) return JSON.parse(content);
       }
     } catch (e) {
-      console.warn('OpenAI API call failed, falling back to local NLP engine:', e.message);
+      console.warn('OpenAI API call notice, falling back to local NLP engine:', e.message);
+    }
+  }
+
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    const claudeModel = preferredModel.includes('claude') ? preferredModel : 'claude-3-7-sonnet-20250219';
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: claudeModel,
+          max_tokens: 1500,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.content?.[0]?.text;
+        if (text) {
+          const match = text.match(/\{[\s\S]*\}/);
+          if (match) return JSON.parse(match[0]);
+        }
+      }
+    } catch (e) {
+      console.warn('Anthropic API call notice, falling back to local NLP engine:', e.message);
     }
   }
 
@@ -491,11 +544,12 @@ Output strict JSON with fields:
 
   const llmResult = await callLLM(prompt, 'Extract recruitment scorecard criteria in valid JSON format.');
   if (llmResult && llmResult.must_have_skills && Array.isArray(llmResult.must_have_skills)) {
+    const modelName = process.env.AI_MODEL || (process.env.GEMINI_API_KEY ? 'gemini-2.0-flash' : (process.env.ANTHROPIC_API_KEY ? 'claude-3-7-sonnet' : 'gpt-4o-mini'));
     return {
       ...llmResult,
       job_title: llmResult.job_title || title || 'Senior Professional',
       intake_timestamp: new Date().toISOString(),
-      ai_engine: process.env.GEMINI_API_KEY ? 'Google Gemini 1.5 Flash (Live LLM API)' : 'OpenAI GPT-4o (Live LLM API)'
+      ai_engine: `Live LLM API (${modelName})`
     };
   }
 

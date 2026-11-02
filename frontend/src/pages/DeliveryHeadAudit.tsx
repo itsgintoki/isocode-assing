@@ -7,17 +7,21 @@ import {
   AlertTriangle, 
   DollarSign, 
   Sparkles, 
-  ShieldCheck,
-  Plus
+  ShieldCheck 
 } from 'lucide-react';
+import { User, CalibrationAudit, KpiMetrics } from '../types';
+
+interface DeliveryHeadAuditProps {
+  currentUser: User | null;
+}
 
 export default function DeliveryHeadAudit({
   currentUser
-}) {
-  const [calibrationData, setCalibrationData] = useState(null);
-  const [kpiMetrics, setKpiMetrics] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [errorNotice, setErrorNotice] = useState(null);
+}: DeliveryHeadAuditProps) {
+  const [calibrationData, setCalibrationData] = useState<{ audits: CalibrationAudit[]; summary?: { totalAudited: number; alignedCount: number; alignmentRate: string } } | null>(null);
+  const [kpiMetrics, setKpiMetrics] = useState<KpiMetrics | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -37,8 +41,8 @@ export default function DeliveryHeadAudit({
 
       setCalibrationData(calData);
       setKpiMetrics(kpis);
-    } catch (err) {
-      setErrorNotice(err.message);
+    } catch (err: any) {
+      setErrorNotice(err.message || 'Error fetching analytics');
     } finally {
       setLoading(false);
     }
@@ -79,6 +83,12 @@ export default function DeliveryHeadAudit({
           </div>
         </div>
       </div>
+
+      {errorNotice && (
+        <div style={{ padding: '0.75rem 1rem', borderRadius: '8px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', fontSize: '0.85rem' }}>
+          {errorNotice}
+        </div>
+      )}
 
       {/* KPI Financial & Performance Cards */}
       {kpiMetrics && (

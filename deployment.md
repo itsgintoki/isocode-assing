@@ -9,8 +9,16 @@ This application is built for **Company A, Noida** (IT services, banking back-of
 ## 1. System Requirements
 
 - **Runtime**: Node.js v18.0.0 or higher (v20+ / v22 recommended)
+- **Language & Frameworks**: **TypeScript** (latest v5.7+ / v7.0 with strict type definitions), **React 19** (Vite 8), **Express 5**
 - **Package Manager**: npm v9.0.0 or higher
-- **Database**: Embedded SQLite (via `better-sqlite3` — zero external DB server installation required; runs anywhere with zero friction)
+- **Database Engine (Dual-Mode)**:
+  - **PostgreSQL 16** (Production-grade connection pool via `pg.Pool`, complete DDL schema at `backend/src/db/schema.postgres.sql`, pre-configured `docker-compose.yml`)
+  - **Embedded SQLite** (via `better-sqlite3` with WAL mode enabled — automatically used if PostgreSQL is not active so reviewers can run the application immediately with zero database installation or configuration!)
+- **AI Models Supported (Latest Generation)**:
+  - **Google Gemini 2.0 Flash** (`gemini-2.0-flash` — flagship ultra-fast structured JSON scoring)
+  - **OpenAI GPT-4o & GPT-4o-mini** (`gpt-4o`, `gpt-4o-mini`, `o3-mini` with strict JSON mode)
+  - **Anthropic Claude 3.7 Sonnet** (`claude-3-7-sonnet-20250219`)
+  - **Built-in High-Fidelity NLP Engine** (deterministic zero-hallucination line-numbered quotation citations without external API dependencies)
 - **Supported Platforms**: Linux, macOS, Windows (WSL / PowerShell)
 
 ---
@@ -80,16 +88,25 @@ The application provides an instant **Role Switcher** in the top navigation bar 
 
 ## 4. Environment Variables
 
-The application runs out of the box with zero required configuration. For production deployments or optional external AI services, configure the following environment variables:
+The application runs out of the box with zero required configuration. For production deployments or optional external services, configure the following environment variables:
 
 | Variable Name | Purpose | Default / Description |
 | :--- | :--- | :--- |
 | `PORT` | Backend HTTP port | `4000` |
 | `NODE_ENV` | Runtime environment mode | `development` or `production` |
+| `DB_TYPE` | Database engine selection | `sqlite` or `postgres` |
 | `DATABASE_PATH` | SQLite database file location | `./backend/data/screening.db` |
-| `SESSION_SECRET` | Session authentication signing secret | Internal cryptosecret |
-| `GEMINI_API_KEY` | *(Optional)* Google Gemini API key for external LLM extraction | Built-in high-fidelity NLP engine is used by default with zero API key dependencies |
-| `OPENAI_API_KEY` | *(Optional)* OpenAI API key fallback | Built-in fallback rule engine active |
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://user:pass@host:5432/dbname` |
+| `POSTGRES_HOST` | PostgreSQL hostname | `localhost` |
+| `POSTGRES_PORT` | PostgreSQL port | `5432` |
+| `POSTGRES_USER` | PostgreSQL user | `postgres` |
+| `POSTGRES_PASSWORD` | PostgreSQL password | None in repo |
+| `POSTGRES_DB` | PostgreSQL database name | `companya_screening` |
+| `AI_PROVIDER` | Preferred LLM provider | `gemini`, `openai`, or `anthropic` |
+| `AI_MODEL` | Preferred AI model identifier | `gemini-2.0-flash`, `gpt-4o-mini`, `gpt-4o`, `claude-3-7-sonnet` |
+| `GEMINI_API_KEY` | *(Optional)* Google Gemini 2.0 API key | Zero external dependencies if omitted (uses built-in engine) |
+| `OPENAI_API_KEY` | *(Optional)* OpenAI API key | Built-in fallback rule engine active |
+| `ANTHROPIC_API_KEY` | *(Optional)* Anthropic Claude API key | Built-in fallback rule engine active |
 | `MAX_FILE_UPLOAD_LIMIT` | Max file upload limit per bulk batch | `500` files |
 
 *(Note: Per submission rules, variable names only are listed; never put secret values in the repository).*

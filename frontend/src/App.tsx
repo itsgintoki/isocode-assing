@@ -8,16 +8,17 @@ import ClientPortal from './pages/ClientPortal';
 import DeliveryHeadAudit from './pages/DeliveryHeadAudit';
 import DPDPCompliance from './pages/DPDPCompliance';
 import CandidateModal from './components/CandidateModal';
+import { User, Requisition, Candidate } from './types';
 
 export default function App() {
-  const [users, setUsers] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [requisitions, setRequisitions] = useState([]);
-  const [currentRequisition, setCurrentRequisition] = useState(null);
-  const [activeTab, setActiveTab] = useState('candidates');
-  const [selectedCandidateForModal, setSelectedCandidateForModal] = useState(null);
-  const [isResetting, setIsResetting] = useState(false);
-  const [toastMessage, setToastMessage] = useState(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [requisitions, setRequisitions] = useState<Requisition[]>([]);
+  const [currentRequisition, setCurrentRequisition] = useState<Requisition | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('candidates');
+  const [selectedCandidateForModal, setSelectedCandidateForModal] = useState<Candidate | null>(null);
+  const [isResetting, setIsResetting] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // 1. Initial Load of Users & Requisitions
   const loadInitialData = async () => {
@@ -32,7 +33,7 @@ export default function App() {
 
       setUsers(usersData.users || []);
       // Default to recruiter Priya
-      const defaultUser = (usersData.users || []).find(u => u.role === 'recruiter') || usersData.users?.[0];
+      const defaultUser = (usersData.users || []).find((u: User) => u.role === 'recruiter') || usersData.users?.[0];
       setCurrentUser(defaultUser);
 
       setRequisitions(reqData.requisitions || []);
@@ -47,7 +48,7 @@ export default function App() {
   }, []);
 
   // 2. Handle Role Switch
-  const handleSwitchUser = (userId) => {
+  const handleSwitchUser = (userId: string) => {
     const selected = users.find(u => u.id === userId);
     if (!selected) return;
     setCurrentUser(selected);
@@ -69,7 +70,7 @@ export default function App() {
   };
 
   // 3. Handle Requisition Selection
-  const handleSelectRequisition = (reqId) => {
+  const handleSelectRequisition = (reqId: string) => {
     const found = requisitions.find(r => r.id === reqId);
     if (found) {
       setCurrentRequisition(found);
@@ -85,7 +86,7 @@ export default function App() {
       const data = await res.json();
       setRequisitions(data.requisitions || []);
       if (currentRequisition) {
-        const updatedCurrent = (data.requisitions || []).find(r => r.id === currentRequisition.id);
+        const updatedCurrent = (data.requisitions || []).find((r: Requisition) => r.id === currentRequisition.id);
         if (updatedCurrent) setCurrentRequisition(updatedCurrent);
       }
     } catch (e) {
@@ -104,7 +105,7 @@ export default function App() {
       setToastMessage('Database successfully reset and re-seeded with realistic sample data!');
       setTimeout(() => setToastMessage(null), 4000);
       await loadInitialData();
-    } catch (err) {
+    } catch (err: any) {
       alert(`Reset error: ${err.message}`);
     } finally {
       setIsResetting(false);
@@ -180,7 +181,7 @@ export default function App() {
           <PipelineKanban
             currentRequisition={currentRequisition}
             currentUser={currentUser}
-            onOpenCandidate={(cand) => setSelectedCandidateForModal(cand)}
+            onOpenCandidate={(cand: Candidate) => setSelectedCandidateForModal(cand)}
           />
         )}
 
@@ -213,19 +214,19 @@ export default function App() {
           requisition={currentRequisition}
           currentUser={currentUser}
           onClose={() => setSelectedCandidateForModal(null)}
-          onVerifyCandidate={async (candidateId, notes) => {
+          onVerifyCandidate={async (candidateId: string, notes: string) => {
             await fetch(`/api/candidates/${candidateId}/verify`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser?.id || 'usr_recruiter_priya' },
-              body: JSON.stringify({ requisitionId: currentRequisition.id, notes })
+              body: JSON.stringify({ requisitionId: currentRequisition?.id, notes })
             });
             handleRequisitionUpdated();
           }}
-          onSubmitToClient={async (candidateId) => {
+          onSubmitToClient={async (candidateId: string) => {
             await fetch('/api/pipeline/move', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser?.id || 'usr_recruiter_priya' },
-              body: JSON.stringify({ requisitionId: currentRequisition.id, candidateId, targetStage: 'submitted_to_client' })
+              body: JSON.stringify({ requisitionId: currentRequisition?.id, candidateId, targetStage: 'submitted_to_client' })
             });
             handleRequisitionUpdated();
           }}

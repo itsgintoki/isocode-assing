@@ -1,39 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, 
-  Filter, 
   Eye, 
   EyeOff, 
   CheckCircle2, 
   AlertTriangle, 
   Send, 
-  ShieldAlert, 
   Sparkles, 
-  UserCheck, 
-  SlidersHorizontal,
-  ChevronRight,
-  FileCheck
+  ChevronRight
 } from 'lucide-react';
 import CandidateModal from '../components/CandidateModal';
+import { Candidate, Requisition, User } from '../types';
+
+interface RankedCandidatesProps {
+  currentRequisition: Requisition | null;
+  currentUser: User | null;
+  onNavigateTab: (tab: string) => void;
+}
 
 export default function RankedCandidates({
   currentRequisition,
   currentUser,
   onNavigateTab
-}) {
-  const [candidates, setCandidates] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+}: RankedCandidatesProps) {
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Filters & Controls
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStage, setSelectedStage] = useState('all');
-  const [minScore, setMinScore] = useState(0);
-  const [blindMode, setBlindMode] = useState(false);
-  const [selectedCandidate, setSelectedCandidate] = useState(null);
-  const [batchSelected, setBatchSelected] = useState([]);
-  const [batchSubmitting, setBatchSubmitting] = useState(false);
-  const [actionNotice, setActionNotice] = useState(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedStage, setSelectedStage] = useState<string>('all');
+  const [minScore, setMinScore] = useState<number>(0);
+  const [blindMode, setBlindMode] = useState<boolean>(false);
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [batchSelected, setBatchSelected] = useState<string[]>([]);
+  const [batchSubmitting, setBatchSubmitting] = useState<boolean>(false);
+  const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const fetchCandidates = async () => {
     if (!currentRequisition) return;
@@ -54,7 +56,7 @@ export default function RankedCandidates({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch candidates');
       setCandidates(data.candidates || []);
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
@@ -65,12 +67,13 @@ export default function RankedCandidates({
     fetchCandidates();
   }, [currentRequisition?.id, selectedStage, minScore, blindMode]);
 
-  const handleSearchSubmit = (e) => {
+  const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchCandidates();
   };
 
-  const handleVerifyCandidate = async (candidateId, notes) => {
+  const handleVerifyCandidate = async (candidateId: string, notes: string) => {
+    if (!currentRequisition) return;
     const res = await fetch(`/api/candidates/${candidateId}/verify`, {
       method: 'POST',
       headers: {
@@ -86,15 +89,16 @@ export default function RankedCandidates({
     if (!res.ok) throw new Error(data.error || 'Verification failed');
     fetchCandidates();
     if (selectedCandidate && selectedCandidate.id === candidateId) {
-      setSelectedCandidate(prev => ({
+      setSelectedCandidate(prev => prev ? ({
         ...prev,
         recruiter_verified: 1,
         recruiter_verified_by: currentUser?.name || 'Recruiter'
-      }));
+      }) : null);
     }
   };
 
-  const handleSubmitToClient = async (candidateId) => {
+  const handleSubmitToClient = async (candidateId: string) => {
+    if (!currentRequisition) return;
     const res = await fetch('/api/pipeline/move', {
       method: 'POST',
       headers: {
@@ -111,15 +115,15 @@ export default function RankedCandidates({
     if (!res.ok) throw new Error(data.error || 'Submission failed');
     fetchCandidates();
     if (selectedCandidate && selectedCandidate.id === candidateId) {
-      setSelectedCandidate(prev => ({
+      setSelectedCandidate(prev => prev ? ({
         ...prev,
         pipeline_stage: 'submitted_to_client'
-      }));
+      }) : null);
     }
   };
 
   const handleBatchSubmit = async () => {
-    if (batchSelected.length === 0) return;
+    if (batchSelected.length === 0 || !currentRequisition) return;
     setBatchSubmitting(true);
     setActionNotice(null);
     try {
@@ -139,14 +143,14 @@ export default function RankedCandidates({
       setActionNotice({ type: 'success', text: data.message });
       setBatchSelected([]);
       fetchCandidates();
-    } catch (err) {
+    } catch (err: any) {
       setActionNotice({ type: 'error', text: err.message });
     } finally {
       setBatchSubmitting(false);
     }
   };
 
-  const toggleSelectCandidate = (id) => {
+  const toggleSelectCandidate = (id: string) => {
     setBatchSelected(prev => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     );
@@ -389,18 +393,18 @@ export default function RankedCandidates({
                     <td>
                       <div 
                         className={`score-badge ${
-                          cand.overall_score >= 80 ? 'high' : 
-                          cand.overall_score >= 60 ? 'medium' : 'low'
+                          (cand.overall_score || 0) >= 80 ? 'high' : 
+                          (cand.overall_score || 0) >= 60 ? 'medium' : 'low'
                         }`}
                       >
-                        {cand.overall_score}%
+                        {cand.overall_score || 0}%
                       </div>
                     </td>
 
                     {/* Key Skills */}
                     <td>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxWidth: '240px' }}>
-                        {cand.key_skills.slice(0, 3).map((s, idx) => (
+                        {(cand.key_skills || []).slice(0, 3).map((s, idx) => (
                           <span 
                             key={idx}
                             style={{
@@ -415,9 +419,9 @@ export default function RankedCandidates({
                             {s}
                           </span>
                         ))}
-                        {cand.key_skills.length > 3 && (
+                        {(cand.key_skills || []).length > 3 && (
                           <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                            +{cand.key_skills.length - 3}
+                            +{(cand.key_skills || []).length - 3}
                           </span>
                         )}
                       </div>
@@ -435,8 +439,8 @@ export default function RankedCandidates({
 
                     {/* AI Confidence */}
                     <td>
-                      <span className={`confidence-pill ${cand.ai_confidence}`}>
-                        {cand.ai_confidence}
+                      <span className={`confidence-pill ${cand.ai_confidence || 'medium'}`}>
+                        {cand.ai_confidence || 'medium'}
                       </span>
                     </td>
 
@@ -465,7 +469,7 @@ export default function RankedCandidates({
                         background: cand.pipeline_stage === 'submitted_to_client' ? '#eff6ff' : (cand.pipeline_stage === 'client_shortlisted' ? '#ecfdf5' : '#f8fafc'),
                         color: cand.pipeline_stage === 'submitted_to_client' ? '#1d4ed8' : (cand.pipeline_stage === 'client_shortlisted' ? '#047857' : '#475569')
                       }}>
-                        {cand.pipeline_stage.replace(/_/g, ' ')}
+                        {(cand.pipeline_stage || 'ai_screened').replace(/_/g, ' ')}
                       </span>
                     </td>
 

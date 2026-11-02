@@ -1,29 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Briefcase, 
+  FileText, 
   Sparkles, 
   Plus, 
   Trash2, 
   Save, 
-  RotateCcw, 
-  Sliders, 
-  Check, 
-  AlertCircle,
-  FileText
+  Sliders
 } from 'lucide-react';
+import { Requisition, User, Scorecard } from '../types';
+
+interface ScorecardIntakeProps {
+  currentRequisition: Requisition | null;
+  currentUser: User | null;
+  onRequisitionUpdated?: () => void;
+}
 
 export default function ScorecardIntake({
   currentRequisition,
   currentUser,
   onRequisitionUpdated
-}) {
-  const [rawJd, setRawJd] = useState('');
-  const [scorecard, setScorecard] = useState(null);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [notice, setNotice] = useState(null);
-  const [newSkillName, setNewSkillName] = useState('');
-  const [newSkillYears, setNewSkillYears] = useState(3);
+}: ScorecardIntakeProps) {
+  const [rawJd, setRawJd] = useState<string>('');
+  const [scorecard, setScorecard] = useState<Scorecard | null>(null);
+  const [isExtracting, setIsExtracting] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [newSkillName, setNewSkillName] = useState<string>('');
+  const [newSkillYears, setNewSkillYears] = useState<number>(3);
 
   // Load current requisition scorecard
   useEffect(() => {
@@ -63,8 +66,9 @@ export default function ScorecardIntake({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Extraction failed');
       setScorecard(data.scorecard);
-      setNotice({ type: 'success', text: 'AI successfully extracted must-have skills, experience, notice, and CTC into editable scorecard!' });
-    } catch (err) {
+      const engineNote = data.scorecard?.ai_engine ? ` via ${data.scorecard.ai_engine}` : '';
+      setNotice({ type: 'success', text: `AI successfully extracted scorecard parameters${engineNote}!` });
+    } catch (err: any) {
       setNotice({ type: 'error', text: err.message });
     } finally {
       setIsExtracting(false);
@@ -88,7 +92,7 @@ export default function ScorecardIntake({
       if (!res.ok) throw new Error(data.error || 'Failed to update scorecard');
       setNotice({ type: 'success', text: data.message || 'Scorecard saved and candidate scores recalculated!' });
       if (onRequisitionUpdated) onRequisitionUpdated();
-    } catch (err) {
+    } catch (err: any) {
       setNotice({ type: 'error', text: err.message });
     } finally {
       setIsSaving(false);
@@ -96,7 +100,7 @@ export default function ScorecardIntake({
   };
 
   const handleAddSkill = () => {
-    if (!newSkillName.trim()) return;
+    if (!newSkillName.trim() || !scorecard) return;
     const skills = scorecard.must_have_skills || [];
     setScorecard({
       ...scorecard,
@@ -106,13 +110,15 @@ export default function ScorecardIntake({
     setNewSkillYears(3);
   };
 
-  const handleRemoveSkill = (index) => {
+  const handleRemoveSkill = (index: number) => {
+    if (!scorecard) return;
     const skills = [...(scorecard.must_have_skills || [])];
     skills.splice(index, 1);
     setScorecard({ ...scorecard, must_have_skills: skills });
   };
 
-  const updateWeight = (category, value) => {
+  const updateWeight = (category: 'skills' | 'experience' | 'notice' | 'ctc', value: string) => {
+    if (!scorecard) return;
     const weights = { ...(scorecard.weights || { skills: 0.4, experience: 0.3, notice: 0.15, ctc: 0.15 }) };
     weights[category] = parseFloat(value);
     setScorecard({ ...scorecard, weights });
@@ -186,7 +192,7 @@ export default function ScorecardIntake({
 
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
             <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>
-              Paste client email or job description. AI will extract must-have skills, experience ceiling, notice period, and CTC budget.
+              Paste client email or job description. AI extracts must-have skills, experience ceiling, notice period, and CTC budget.
             </p>
             <textarea
               value={rawJd}
@@ -403,7 +409,7 @@ export default function ScorecardIntake({
                     type="number"
                     placeholder="Min Yrs"
                     value={newSkillYears}
-                    onChange={(e) => setNewSkillYears(e.target.value)}
+                    onChange={(e) => setNewSkillYears(Number(e.target.value))}
                     style={{ width: '80px', padding: '0.45rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.825rem' }}
                   />
                   <button onClick={handleAddSkill} className="btn btn-secondary btn-sm">

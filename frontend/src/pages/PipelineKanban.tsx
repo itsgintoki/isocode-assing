@@ -2,16 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { 
   GitPullRequest, 
   ArrowRight, 
-  ArrowLeft, 
   CheckCircle2, 
-  AlertTriangle, 
-  Send, 
-  UserCheck, 
-  Calendar,
-  Briefcase
+  AlertTriangle
 } from 'lucide-react';
+import { Candidate, Requisition, User, PipelineStage } from '../types';
 
-const STAGE_CONFIG = [
+interface StageConfigItem {
+  id: PipelineStage;
+  label: string;
+  color: string;
+}
+
+const STAGE_CONFIG: StageConfigItem[] = [
   { id: 'sourced', label: '1. Sourced', color: '#64748b' },
   { id: 'ai_screened', label: '2. AI Screened', color: '#0284c7' },
   { id: 'recruiter_verified', label: '3. Recruiter Verified', color: '#7c3aed' },
@@ -23,15 +25,21 @@ const STAGE_CONFIG = [
   { id: 'rejected', label: 'Archived / Rejected', color: '#dc2626' }
 ];
 
+interface PipelineKanbanProps {
+  currentRequisition: Requisition | null;
+  currentUser: User | null;
+  onOpenCandidate?: (cand: Candidate) => void;
+}
+
 export default function PipelineKanban({
   currentRequisition,
   currentUser,
   onOpenCandidate
-}) {
-  const [pipelineData, setPipelineData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [errorNotice, setErrorNotice] = useState(null);
-  const [isMoving, setIsMoving] = useState(false);
+}: PipelineKanbanProps) {
+  const [pipelineData, setPipelineData] = useState<Record<string, Candidate[]> | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [isMoving, setIsMoving] = useState<boolean>(false);
 
   const fetchPipeline = async () => {
     if (!currentRequisition) return;
@@ -44,7 +52,7 @@ export default function PipelineKanban({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch pipeline data');
       setPipelineData(data.pipeline || {});
-    } catch (err) {
+    } catch (err: any) {
       setErrorNotice(err.message);
     } finally {
       setLoading(false);
@@ -55,7 +63,8 @@ export default function PipelineKanban({
     fetchPipeline();
   }, [currentRequisition?.id]);
 
-  const handleMoveStage = async (candidateId, targetStage) => {
+  const handleMoveStage = async (candidateId: string, targetStage: PipelineStage) => {
+    if (!currentRequisition) return;
     setIsMoving(true);
     setErrorNotice(null);
     try {
@@ -74,7 +83,7 @@ export default function PipelineKanban({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Move failed');
       fetchPipeline();
-    } catch (err) {
+    } catch (err: any) {
       setErrorNotice(err.message);
     } finally {
       setIsMoving(false);
@@ -167,8 +176,8 @@ export default function PipelineKanban({
                           <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>
                             {cand.name}
                           </span>
-                          <span className={`score-badge ${cand.overall_score >= 80 ? 'high' : (cand.overall_score >= 60 ? 'medium' : 'low')}`} style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
-                            {cand.overall_score}%
+                          <span className={`score-badge ${(cand.overall_score || 0) >= 80 ? 'high' : ((cand.overall_score || 0) >= 60 ? 'medium' : 'low')}`} style={{ fontSize: '0.75rem', padding: '0.15rem 0.4rem' }}>
+                            {cand.overall_score || 0}%
                           </span>
                         </div>
 

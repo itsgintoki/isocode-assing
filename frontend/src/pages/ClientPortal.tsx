@@ -3,44 +3,45 @@ import {
   CheckCircle, 
   XCircle, 
   Calendar, 
-  Clock, 
   Quote, 
   ChevronDown, 
   ChevronUp, 
-  Building2, 
   Lock, 
   Briefcase, 
-  Check, 
-  AlertCircle,
-  Smartphone,
-  ShieldCheck,
   Send
 } from 'lucide-react';
+import { Candidate, Requisition, User, CriterionEvaluation } from '../types';
+
+interface ClientPortalProps {
+  currentRequisition: Requisition | null;
+  currentUser: User | null;
+  onSwitchUser?: (userId: string) => void;
+}
 
 export default function ClientPortal({
   currentRequisition,
   currentUser,
   onSwitchUser
-}) {
-  const [candidates, setCandidates] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [expandedId, setExpandedId] = useState(null);
+}: ClientPortalProps) {
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Action Modals State
-  const [actionTarget, setActionTarget] = useState(null);
-  const [actionType, setActionType] = useState(null); // 'reject' | 'propose_slots'
-  const [rejectionReason, setRejectionReason] = useState('Insufficient microservices depth');
-  const [rejectionNotes, setRejectionNotes] = useState('');
+  const [actionTarget, setActionTarget] = useState<Candidate | null>(null);
+  const [actionType, setActionType] = useState<'reject' | 'propose_slots' | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>('Insufficient microservices depth');
+  const [rejectionNotes, setRejectionNotes] = useState<string>('');
   
   // Interview slot state
-  const [slotDate, setSlotDate] = useState('2026-11-05');
-  const [slotTime, setSlotTime] = useState('14:30');
-  const [slotRound, setSlotRound] = useState('Technical Round 1');
-  const [interviewerName, setInterviewerName] = useState('Vikram Malhotra (VP Eng)');
+  const [slotDate, setSlotDate] = useState<string>('2026-11-05');
+  const [slotTime, setSlotTime] = useState<string>('14:30');
+  const [slotRound, setSlotRound] = useState<string>('Technical Round 1');
+  const [interviewerName, setInterviewerName] = useState<string>('Vikram Malhotra (VP Eng)');
   
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [actionNotice, setActionNotice] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'info' | 'error', text: string } | null>(null);
 
   const fetchShortlist = async () => {
     if (!currentRequisition) return;
@@ -53,7 +54,7 @@ export default function ClientPortal({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load client shortlist');
       setCandidates(data.candidates || []);
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
@@ -64,7 +65,8 @@ export default function ClientPortal({
     fetchShortlist();
   }, [currentRequisition?.id, currentUser?.id]);
 
-  const handleShortlist = async (candidateId) => {
+  const handleShortlist = async (candidateId: string) => {
+    if (!currentRequisition) return;
     setIsSubmitting(true);
     setActionNotice(null);
     try {
@@ -85,16 +87,16 @@ export default function ClientPortal({
       if (!res.ok) throw new Error(data.error || 'Action failed');
       setActionNotice({ type: 'success', text: `Candidate ${candidateId} shortlisted successfully!` });
       fetchShortlist();
-    } catch (err) {
+    } catch (err: any) {
       setActionNotice({ type: 'error', text: err.message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleRejectSubmit = async (e) => {
+  const handleRejectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!actionTarget) return;
+    if (!actionTarget || !currentRequisition) return;
     setIsSubmitting(true);
     setActionNotice(null);
     try {
@@ -117,16 +119,16 @@ export default function ClientPortal({
       setActionNotice({ type: 'info', text: `Feedback submitted for ${actionTarget.id}. Marked as rejected.` });
       setActionTarget(null);
       fetchShortlist();
-    } catch (err) {
+    } catch (err: any) {
       setActionNotice({ type: 'error', text: err.message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleInterviewSlotSubmit = async (e) => {
+  const handleInterviewSlotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!actionTarget) return;
+    if (!actionTarget || !currentRequisition) return;
     setIsSubmitting(true);
     setActionNotice(null);
     try {
@@ -155,14 +157,14 @@ export default function ClientPortal({
       setActionNotice({ type: 'success', text: `Interview slot proposed for ${actionTarget.id} on ${slotDate} at ${slotTime}!` });
       setActionTarget(null);
       fetchShortlist();
-    } catch (err) {
+    } catch (err: any) {
       setActionNotice({ type: 'error', text: err.message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const toggleExpand = (id) => {
+  const toggleExpand = (id: string) => {
     setExpandedId(prev => prev === id ? null : id);
   };
 
@@ -254,7 +256,7 @@ export default function ClientPortal({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                       <div 
                         className={`score-badge ${
-                          cand.overall_score >= 80 ? 'high' : (cand.overall_score >= 60 ? 'medium' : 'low')
+                          (cand.overall_score || 0) >= 80 ? 'high' : ((cand.overall_score || 0) >= 60 ? 'medium' : 'low')
                         }`}
                         style={{ fontSize: '1.05rem', padding: '0.35rem 0.65rem' }}
                       >
@@ -287,7 +289,7 @@ export default function ClientPortal({
                         color: cand.pipeline_stage === 'client_shortlisted' ? '#065f46' : (cand.pipeline_stage === 'interview_scheduled' ? '#1e40af' : '#475569'),
                         border: `1px solid ${cand.pipeline_stage === 'client_shortlisted' ? '#a7f3d0' : (cand.pipeline_stage === 'interview_scheduled' ? '#bfdbfe' : '#e2e8f0')}`
                       }}>
-                        {cand.pipeline_stage.replace(/_/g, ' ')}
+                        {(cand.pipeline_stage || 'submitted_to_client').replace(/_/g, ' ')}
                       </span>
                     </div>
                   </div>
@@ -300,7 +302,7 @@ export default function ClientPortal({
                     </div>
                     <div>
                       <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 600 }}>Notice Period</span>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: cand.notice_period_days <= currentRequisition.max_notice_days ? '#059669' : '#b45309' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: cand.notice_period_days <= (currentRequisition?.max_notice_days || 60) ? '#059669' : '#b45309' }}>
                         {cand.notice_period_days} Days
                       </div>
                     </div>
@@ -320,7 +322,7 @@ export default function ClientPortal({
 
                   {/* Skills Pills */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                    {cand.key_skills.map((s, idx) => (
+                    {(cand.key_skills || []).map((s: string, idx: number) => (
                       <span 
                         key={idx}
                         style={{
@@ -345,7 +347,7 @@ export default function ClientPortal({
                   )}
 
                   {/* Proposed Interview Slots Banner if already scheduled */}
-                  {hasSlots && (
+                  {hasSlots && cand.interview_slots && (
                     <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', padding: '0.65rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <Calendar size={16} color="#059669" />
                       <div style={{ fontSize: '0.825rem', color: '#065f46' }}>
@@ -376,12 +378,12 @@ export default function ClientPortal({
                   </button>
 
                   {/* Collapsible Evidence Quotes Drawer */}
-                  {isExpanded && (
+                  {isExpanded && cand.breakdown && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderTop: '1px solid #e2e8f0', paddingTop: '0.75rem' }}>
                       <h4 style={{ fontSize: '0.8rem', textTransform: 'uppercase', color: '#64748b', margin: 0, fontWeight: 700 }}>
                         Direct Quotes Cited from Candidate CV:
                       </h4>
-                      {cand.breakdown.map((crit, idx) => (
+                      {cand.breakdown.map((crit: CriterionEvaluation, idx: number) => (
                         <div key={idx} className="evidence-quote-box">
                           <span className="quote-label">
                             <Quote size={11} style={{ display: 'inline', marginRight: '3px' }} />
