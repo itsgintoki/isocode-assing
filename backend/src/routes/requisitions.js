@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 const { authMiddleware, requireRole } = require('../middleware/auth');
-const { extractScorecardFromJD, scoreCandidate } = require('../services/ai_scorer');
+const { extractScorecardFromJD, extractScorecardWithAI, scoreCandidate } = require('../services/ai_scorer');
 const { logAccess } = require('../services/dpdp_service');
 
 router.use(authMiddleware);
@@ -64,13 +64,13 @@ router.get('/:id', (req, res) => {
 });
 
 // AI JD Intake endpoint - Extracts editable scorecard from raw JD text
-router.post('/intake-jd', requireRole(['recruiter', 'delivery_head']), (req, res) => {
+router.post('/intake-jd', requireRole(['recruiter', 'delivery_head']), async (req, res) => {
   const { rawJdText, jobTitle } = req.body;
   if (!rawJdText || rawJdText.trim().length < 15) {
     return res.status(400).json({ error: 'Please provide valid JD text to extract scorecard' });
   }
 
-  const scorecard = extractScorecardFromJD(rawJdText, jobTitle);
+  const scorecard = await extractScorecardWithAI(rawJdText, jobTitle);
   res.json({
     success: true,
     scorecard,

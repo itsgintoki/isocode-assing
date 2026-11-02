@@ -417,9 +417,100 @@ function extractScorecardFromJD(rawJdText, title = '') {
   };
 }
 
+async function callLLM(prompt, systemPrompt = '') {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+
+  if (geminiKey) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `${systemPrompt}\n\n${prompt}` }] }],
+          generationConfig: { responseMimeType: 'application/json' }
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return JSON.parse(text);
+      }
+    } catch (e) {
+      console.warn('Gemini API call failed, falling back to local NLP engine:', e.message);
+    }
+  }
+
+  if (openaiKey) {
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          response_format: { type: 'json_object' }
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) return JSON.parse(content);
+      }
+    } catch (e) {
+      console.warn('OpenAI API call failed, falling back to local NLP engine:', e.message);
+    }
+  }
+
+  return null;
+}
+
+async function extractScorecardWithAI(rawJdText, title = '') {
+  const prompt = `You are an AI recruitment expert for Company A staffing. Extract structured scorecard criteria from this Job Description:
+JD TEXT:
+${rawJdText}
+
+Output strict JSON with fields:
+- job_title: string
+- min_exp: number
+- max_exp: number
+- max_notice_days: number
+- max_ctc: number (in LPA)
+- location: string
+- must_have_skills: array of { name: string, min_years: number }
+- nice_to_have_skills: array of { name: string }
+- weights: { skills: 0.4, experience: 0.3, notice: 0.15, ctc: 0.15 }
+- minimum_threshold_score: 65`;
+
+  const llmResult = await callLLM(prompt, 'Extract recruitment scorecard criteria in valid JSON format.');
+  if (llmResult && llmResult.must_have_skills && Array.isArray(llmResult.must_have_skills)) {
+    return {
+      ...llmResult,
+      job_title: llmResult.job_title || title || 'Senior Professional',
+      intake_timestamp: new Date().toISOString(),
+      ai_engine: process.env.GEMINI_API_KEY ? 'Google Gemini 1.5 Flash (Live LLM API)' : 'OpenAI GPT-4o (Live LLM API)'
+    };
+  }
+
+  const localScorecard = extractScorecardFromJD(rawJdText, title);
+  return {
+    ...localScorecard,
+    ai_engine: 'Built-in High-Fidelity NLP Engine'
+  };
+}
+
 module.exports = {
   scoreCandidate,
   extractScorecardFromJD,
+  extractScorecardWithAI,
+  callLLM,
   sanitizeForBlindScoring,
   findEvidenceInText
 };
