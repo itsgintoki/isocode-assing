@@ -14,11 +14,9 @@ This application is built for **Company A, Noida** (IT services, banking back-of
 - **Database Engine (Dual-Mode)**:
   - **PostgreSQL 16** (Production-grade connection pool via `pg.Pool`, complete DDL schema at `backend/src/db/schema.postgres.sql`, pre-configured `docker-compose.yml`)
   - **Embedded SQLite** (via `better-sqlite3` with WAL mode enabled — automatically used if PostgreSQL is not active so reviewers can run the application immediately with zero database installation or configuration!)
-- **AI Models Supported (Latest Generation)**:
-  - **Google Gemini 2.0 Flash** (`gemini-2.0-flash` — flagship ultra-fast structured JSON scoring)
-  - **OpenAI GPT-4o & GPT-4o-mini** (`gpt-4o`, `gpt-4o-mini`, `o3-mini` with strict JSON mode)
-  - **Anthropic Claude 3.7 Sonnet** (`claude-3-7-sonnet-20250219`)
-  - **Built-in High-Fidelity NLP Engine** (deterministic zero-hallucination line-numbered quotation citations without external API dependencies)
+- **AI Models Supported (Dynamic Model Router)**:
+  - **Dynamic Multi-Provider Router**: Set any model string via `AI_MODEL` environment variable (e.g. OpenAI `gpt-5`, `o3`, `o1`, `gpt-4o`; Google Gemini `gemini-2.5-flash`, `gemini-3.0`, `gemini-2.0-flash`; Anthropic Claude `claude-4-sonnet`, `claude-3-7-sonnet`).
+  - **Built-in Deterministic NLP Citation Engine**: If external API keys are not supplied, the system automatically uses its local high-fidelity NLP quote extractor that cites line-numbered verbatim quotes without hallucination, rate limits, or external dependencies.
 - **Supported Platforms**: Linux, macOS, Windows (WSL / PowerShell)
 
 ---
@@ -103,7 +101,7 @@ The application runs out of the box with zero required configuration. For produc
 | `POSTGRES_PASSWORD` | PostgreSQL password | None in repo |
 | `POSTGRES_DB` | PostgreSQL database name | `companya_screening` |
 | `AI_PROVIDER` | Preferred LLM provider | `gemini`, `openai`, or `anthropic` |
-| `AI_MODEL` | Preferred AI model identifier | `gemini-2.0-flash`, `gpt-4o-mini`, `gpt-4o`, `claude-3-7-sonnet` |
+| `AI_MODEL` | Preferred AI model identifier | Any model string (e.g. `gpt-5`, `o3`, `gemini-2.5-flash`, `claude-4-sonnet`) |
 | `GEMINI_API_KEY` | *(Optional)* Google Gemini 2.0 API key | Zero external dependencies if omitted (uses built-in engine) |
 | `OPENAI_API_KEY` | *(Optional)* OpenAI API key | Built-in fallback rule engine active |
 | `ANTHROPIC_API_KEY` | *(Optional)* Anthropic Claude API key | Built-in fallback rule engine active |

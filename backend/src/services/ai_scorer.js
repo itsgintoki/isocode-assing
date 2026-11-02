@@ -423,8 +423,8 @@ async function callLLM(prompt, systemPrompt = '') {
   const preferredModel = (process.env.AI_MODEL || '').trim();
 
   if (geminiKey) {
-    // Support latest Gemini 2.0 Flash generation by default with 1.5 fallback
-    const geminiModel = preferredModel.includes('gemini') ? preferredModel : 'gemini-2.0-flash';
+    // Dynamic model routing: allows any 2026 model via AI_MODEL (e.g. gemini-2.5-flash, gemini-3.0, gemini-2.0-flash)
+    const geminiModel = preferredModel || 'gemini-2.5-flash';
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`;
       const res = await fetch(url, {
@@ -440,8 +440,8 @@ async function callLLM(prompt, systemPrompt = '') {
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return JSON.parse(text);
       } else {
-        // Fallback to gemini-1.5-flash if 2.0 endpoint not provisioned on given key
-        const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+        // Fallback to gemini-2.0-flash if specified model is not provisioned on given key
+        const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`;
         const fallbackRes = await fetch(fallbackUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -462,9 +462,8 @@ async function callLLM(prompt, systemPrompt = '') {
   }
 
   if (openaiKey) {
-    const openaiModel = preferredModel.includes('gpt') || preferredModel.includes('o1') || preferredModel.includes('o3') 
-      ? preferredModel 
-      : 'gpt-4o-mini';
+    // Dynamic model routing: allows any 2026 OpenAI model via AI_MODEL (e.g. gpt-5, o3, o1, gpt-4o)
+    const openaiModel = preferredModel || 'gpt-4o-mini';
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -493,7 +492,8 @@ async function callLLM(prompt, systemPrompt = '') {
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
-    const claudeModel = preferredModel.includes('claude') ? preferredModel : 'claude-3-7-sonnet-20250219';
+    // Dynamic model routing: allows any 2026 Anthropic model via AI_MODEL (e.g. claude-4-sonnet, claude-3-7-sonnet)
+    const claudeModel = preferredModel || 'claude-3-7-sonnet';
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -544,7 +544,7 @@ Output strict JSON with fields:
 
   const llmResult = await callLLM(prompt, 'Extract recruitment scorecard criteria in valid JSON format.');
   if (llmResult && llmResult.must_have_skills && Array.isArray(llmResult.must_have_skills)) {
-    const modelName = process.env.AI_MODEL || (process.env.GEMINI_API_KEY ? 'gemini-2.0-flash' : (process.env.ANTHROPIC_API_KEY ? 'claude-3-7-sonnet' : 'gpt-4o-mini'));
+    const modelName = process.env.AI_MODEL || (process.env.GEMINI_API_KEY ? 'gemini-2.5-flash' : (process.env.ANTHROPIC_API_KEY ? 'claude-3-7-sonnet' : 'gpt-4o-mini'));
     return {
       ...llmResult,
       job_title: llmResult.job_title || title || 'Senior Professional',
