@@ -54,20 +54,46 @@ function executeCandidateErasure({ candidateId, requestedBy, reason = 'Candidate
   const anonymizedEmail = `erased.${candidateId.toLowerCase()}@dpdp.purged`;
   const anonymizedPhone = '+91 00000 00000';
 
-  // Perform secure redaction while preserving audit trail
-  db.prepare(`
-    UPDATE candidates
-    SET 
-      name = ?,
-      email = ?,
-      phone = ?,
-      raw_cv_text = '[DATA PURGED UNDER DPDP ACT 2023 RIGHT TO ERASURE - ' || CURRENT_TIMESTAMP || ']',
-      file_hash = NULL,
-      consent_status = 'deleted',
-      is_deleted = 1,
-      deleted_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(anonymizedName, anonymizedEmail, anonymizedPhone, candidateId);
+  // Perform secure redaction while preserving the audit trail. Direct
+  // identifiers, the CV text and every derived profile field are cleared.
+  // The evaluation row remains so stage history and audit references survive.
+  const erase = db.transaction(() => {
+    db.prepare(`
+      UPDATE candidates
+      SET
+        name = ?,
+        email = ?,
+        phone = ?,
+        current_role = 'Erased profile',
+        total_exp_years = 0,
+        key_skills_json = '[]',
+        current_ctc = NULL,
+        expected_ctc = NULL,
+        notice_period_days = NULL,
+        location = '',
+        raw_cv_text = '[DATA PURGED UNDER DPDP ACT 2023 RIGHT TO ERASURE - ' || CURRENT_TIMESTAMP || ']',
+        original_filename = NULL,
+        file_hash = NULL,
+        consent_status = 'deleted',
+        is_deleted = 1,
+        deleted_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(anonymizedName, anonymizedEmail, anonymizedPhone, candidateId);
+
+    db.prepare(`
+      UPDATE cv_evaluations
+      SET breakdown_json = '[]',
+          uncertainty_notes = 'Candidate data erased under the DPDP Act, 2023.',
+          recruiter_notes = '[erased]',
+          rejection_reason = NULL,
+          rejection_notes = NULL,
+          client_feedback_notes = '[erased]',
+          interview_slots_json = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE candidate_id = ?
+    `).run(candidateId);
+  });
+  erase();
 
   // Log compliance audit entry
   logAccess({

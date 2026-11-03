@@ -13,7 +13,7 @@ function checkDuplicate({ fileHash, email, phone, candidateId = null }) {
     const existingByHash = db.prepare(`
       SELECT id, name, email, phone, original_filename, created_at, is_deleted
       FROM candidates
-      WHERE file_hash = ? AND (id != ? OR ? IS NULL)
+      WHERE file_hash = ? AND is_deleted = 0 AND (id != ? OR ? IS NULL)
     `).get(fileHash, candidateId, candidateId);
 
     if (existingByHash) {
@@ -32,7 +32,7 @@ function checkDuplicate({ fileHash, email, phone, candidateId = null }) {
     const existingByEmail = db.prepare(`
       SELECT id, name, email, phone, original_filename, created_at, is_deleted
       FROM candidates
-      WHERE LOWER(email) = ? AND (id != ? OR ? IS NULL)
+      WHERE LOWER(email) = ? AND is_deleted = 0 AND (id != ? OR ? IS NULL)
     `).get(normalizedEmail, candidateId, candidateId);
 
     if (existingByEmail) {
@@ -52,7 +52,7 @@ function checkDuplicate({ fileHash, email, phone, candidateId = null }) {
       const candidates = db.prepare(`
         SELECT id, name, email, phone, original_filename, created_at, is_deleted
         FROM candidates
-        WHERE (id != ? OR ? IS NULL)
+        WHERE is_deleted = 0 AND (id != ? OR ? IS NULL)
       `).all(candidateId, candidateId);
 
       const existingByPhone = candidates.find(c => {

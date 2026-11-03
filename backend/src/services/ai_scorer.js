@@ -106,13 +106,16 @@ function scoreCandidate(candidateRaw, scorecard, options = { blindScreening: tru
       criterionScore = 100;
       status = 'matched';
       mustHaveMatched++;
+      if (minYrs > 0) {
+        notes = `${minYrs}+ years requested. The CV mentions the skill, but the years were not independently verified.`;
+      }
     } else if (matchedInArray) {
       quote = `Listed in candidate core competencies: "${skillName}"`;
       criterionScore = 85;
       status = 'matched';
       confidence = 'medium';
       uncertainty = true;
-      notes = 'Mentioned in skills summary list, but specific project depth line not found in CV text.';
+      notes = 'Mentioned in the skills summary, but no project-level evidence line was found in the CV.';
       mustHaveMatched++;
     } else {
       quote = `No direct mention of "${skillName}" discovered in resume text.`;
@@ -209,8 +212,8 @@ function scoreCandidate(candidateRaw, scorecard, options = { blindScreening: tru
     noticeStatus = 'unknown';
     noticeUncertainty = true;
     noticeConfidence = 'low';
-    noticeQuote = 'Notice period not declared in resume.';
-    noticeNotes = 'AI Flag: Notice period missing from CV text. Defaulted to standard 90-day assumption. Recruiter must clarify on call.';
+    noticeQuote = 'Notice period not declared in the resume.';
+    noticeNotes = 'The notice period is missing, so this criterion is scored neutrally. The recruiter must confirm availability; the candidate is not rejected automatically.';
   } else if (candNotice <= maxNotice) {
     noticeScore = 100;
     noticeQuote = noticeEvidence 
@@ -255,11 +258,11 @@ function scoreCandidate(candidateRaw, scorecard, options = { blindScreening: tru
   const ctcEvidence = findEvidenceInText(text, ['ctc', 'lpa', 'salary', 'package', 'compensation', 'inr']);
 
   if (!expCtc) {
-    ctcScore = 75;
+    ctcScore = 50;
     ctcConfidence = 'low';
     ctcUncertainty = true;
-    ctcQuote = ctcEvidence ? `"${ctcEvidence.quote}"` : 'Compensation expectation not explicitly stated in resume.';
-    ctcNotes = 'Expected CTC not found. Inferred within market band. Verification required.';
+    ctcQuote = ctcEvidence ? `"${ctcEvidence.quote}"` : 'Compensation expectation not stated in the resume.';
+    ctcNotes = 'Expected CTC was not found, so this criterion is scored neutrally. The recruiter must confirm the expectation before submission.';
   } else if (expCtc <= maxCtc) {
     ctcScore = 100;
     ctcQuote = `Expected CTC: ₹${expCtc} LPA (within client budget of ₹${maxCtc} LPA).`;
@@ -276,7 +279,7 @@ function scoreCandidate(candidateRaw, scorecard, options = { blindScreening: tru
     name: `CTC Budget (Max ₹${maxCtc} LPA)`,
     required: false,
     score: ctcScore,
-    status: ctcScore >= 80 ? 'matched' : 'budget_overrun',
+    status: ctcUncertainty ? 'unknown' : (ctcScore >= 80 ? 'matched' : 'budget_overrun'),
     evidence_quote: ctcQuote,
     confidence: ctcConfidence,
     uncertainty: ctcUncertainty,
@@ -322,6 +325,7 @@ function scoreCandidate(candidateRaw, scorecard, options = { blindScreening: tru
     ai_confidence: aiConfidence,
     uncertainty_notes: uncertaintySummary,
     must_have_matched: `${mustHaveMatched}/${mustHaveCount}`,
+    scoring_engine: 'Deterministic evidence matcher',
     is_blind_screened: options.blindScreening
   };
 }
@@ -332,38 +336,40 @@ function scoreCandidate(candidateRaw, scorecard, options = { blindScreening: tru
  */
 function extractScorecardFromJD(rawJdText, title = '') {
   const text = (rawJdText || '').toLowerCase();
-  
-  // Extract years of experience
+
+  // Extract years of experience. Supports "5 to 8 years", "5-8 yrs" and "5+ years".
   let minExp = 3;
   let maxExp = 7;
-  const expMatch = text.match(/(\d+)\s*(?:-|to)\s*(\d+)\s*(?:yrs|years)/i) || 
-                   text.match(/(\d+)\+?\s*(?:yrs|years)/i);
-  if (expMatch) {
-    if (expMatch[2]) {
-      minExp = parseFloat(expMatch[1]);
-      maxExp = parseFloat(expMatch[2]);
-    } else {
-      minExp = parseFloat(expMatch[1]);
-      maxExp = minExp + 3;
-    }
+  const rangeMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)/i);
+  const minimumMatch = text.match(/(\d+(?:\.\d+)?)\s*\+\s*(?:years?|yrs?)/i)
+    || text.match(/(?:minimum|at least|min\.?)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:years?|yrs?)/i);
+  if (rangeMatch) {
+    minExp = parseFloat(rangeMatch[1]);
+    maxExp = parseFloat(rangeMatch[2]);
+  } else if (minimumMatch) {
+    minExp = parseFloat(minimumMatch[1]);
+    maxExp = minExp + 3;
   }
 
-  // Extract notice period
+  // Extract notice period. The colon and currency/qualifier words in real JDs
+  // are why this is deliberately tolerant: "Notice Period: Up to 60 days".
   let maxNotice = 60;
-  const noticeMatch = text.match(/notice(?:\s*period)?\s*(?:up to|<=|max|within|under)?\s*(\d+)\s*days/i) ||
-                      text.match(/(\d+)\s*days\s*notice/i);
+  const noticeMatch = text.match(/notice(?:\s*period)?\s*[:\-–]?\s*(?:of\s*)?(?:up to|within|max(?:imum)?|under|<=|less than)?\s*(\d+)\s*(?:calendar\s*)?days?/i)
+    || text.match(/(\d+)\s*(?:calendar\s*)?days?\s*(?:of\s*)?notice/i);
   if (noticeMatch) {
     maxNotice = parseInt(noticeMatch[1], 10);
-  } else if (text.includes('immediate') || text.includes('15 days')) {
-    maxNotice = 30;
+  } else if (/\bimmediate\s+(?:joiner|joiners|joining|start)\b/i.test(text)) {
+    maxNotice = 15;
   }
 
-  // Extract CTC / Budget
+  // Extract CTC / Budget. Handles "₹24.0 LPA", "18-24 LPA", "Budget: 24 LPA".
   let maxCtc = 24;
-  const ctcMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(?:lpa|lakhs|lakh)/i) ||
-                   text.match(/(?:budget|ctc|package|up to|max)\s*(\d+(?:\.\d+)?)\s*(?:lpa|lakhs|lakh)/i);
-  if (ctcMatch) {
-    maxCtc = parseFloat(ctcMatch[2] || ctcMatch[1]);
+  const ctcRangeMatch = text.match(/(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?|lakh)/i);
+  const ctcSingleMatch = text.match(/(?:budget|max(?:imum)?\s*ctc|ctc|package|compensation|salary)[^0-9₹]{0,30}(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?|lakh)/i);
+  if (ctcRangeMatch) {
+    maxCtc = parseFloat(ctcRangeMatch[2]);
+  } else if (ctcSingleMatch) {
+    maxCtc = parseFloat(ctcSingleMatch[1]);
   }
 
   // Extract Location
@@ -423,13 +429,15 @@ async function callLLM(prompt, systemPrompt = '') {
   const preferredModel = (process.env.AI_MODEL || '').trim();
 
   if (geminiKey) {
-    // Dynamic model routing: allows any 2026 model via AI_MODEL (e.g. gemini-2.5-flash, gemini-3.0, gemini-2.0-flash)
-    const geminiModel = preferredModel || 'gemini-2.5-flash';
+    const geminiModel = process.env.GEMINI_MODEL
+      || (process.env.AI_PROVIDER === 'gemini' ? preferredModel : '')
+      || 'gemini-2.5-flash';
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
           contents: [{ parts: [{ text: `${systemPrompt}\n\n${prompt}` }] }],
           generationConfig: { responseMimeType: 'application/json' }
@@ -445,6 +453,7 @@ async function callLLM(prompt, systemPrompt = '') {
         const fallbackRes = await fetch(fallbackUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(20000),
           body: JSON.stringify({
             contents: [{ parts: [{ text: `${systemPrompt}\n\n${prompt}` }] }],
             generationConfig: { responseMimeType: 'application/json' }
@@ -462,8 +471,9 @@ async function callLLM(prompt, systemPrompt = '') {
   }
 
   if (openaiKey) {
-    // Dynamic model routing: allows any 2026 OpenAI model via AI_MODEL (e.g. gpt-5, o3, o1, gpt-4o)
-    const openaiModel = preferredModel || 'gpt-4o-mini';
+    const openaiModel = process.env.OPENAI_MODEL
+      || (process.env.AI_PROVIDER === 'openai' ? preferredModel : '')
+      || 'gpt-4o-mini';
     try {
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -471,6 +481,7 @@ async function callLLM(prompt, systemPrompt = '') {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${openaiKey}`
         },
+        signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
           model: openaiModel,
           messages: [
@@ -492,8 +503,9 @@ async function callLLM(prompt, systemPrompt = '') {
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
-    // Dynamic model routing: allows any 2026 Anthropic model via AI_MODEL (e.g. claude-4-sonnet, claude-3-7-sonnet)
-    const claudeModel = preferredModel || 'claude-3-7-sonnet';
+    const claudeModel = process.env.ANTHROPIC_MODEL
+      || (process.env.AI_PROVIDER === 'anthropic' ? preferredModel : '')
+      || 'claude-3-7-sonnet';
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -502,6 +514,7 @@ async function callLLM(prompt, systemPrompt = '') {
           'x-api-key': anthropicKey,
           'anthropic-version': '2023-06-01'
         },
+        signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
           model: claudeModel,
           max_tokens: 1500,
@@ -544,19 +557,43 @@ Output strict JSON with fields:
 
   const llmResult = await callLLM(prompt, 'Extract recruitment scorecard criteria in valid JSON format.');
   if (llmResult && llmResult.must_have_skills && Array.isArray(llmResult.must_have_skills)) {
-    const modelName = process.env.AI_MODEL || (process.env.GEMINI_API_KEY ? 'gemini-2.5-flash' : (process.env.ANTHROPIC_API_KEY ? 'claude-3-7-sonnet' : 'gpt-4o-mini'));
-    return {
-      ...llmResult,
-      job_title: llmResult.job_title || title || 'Senior Professional',
-      intake_timestamp: new Date().toISOString(),
-      ai_engine: `Live LLM API (${modelName})`
-    };
+    const skills = llmResult.must_have_skills
+      .map((skill) => ({
+        name: String(typeof skill === 'string' ? skill : skill?.name || '').trim().slice(0, 80),
+        min_years: Math.max(0, Number(skill?.min_years) || 0)
+      }))
+      .filter((skill) => skill.name)
+      .slice(0, 20);
+
+    if (skills.length > 0) {
+      const provider = process.env.GEMINI_API_KEY ? 'Gemini' : (process.env.OPENAI_API_KEY ? 'OpenAI' : 'Anthropic');
+      const modelName = process.env.GEMINI_MODEL || process.env.OPENAI_MODEL || process.env.ANTHROPIC_MODEL || process.env.AI_MODEL || 'configured model';
+      return {
+        ...llmResult,
+        job_title: String(llmResult.job_title || title || 'Senior Professional').slice(0, 120),
+        min_exp: Math.max(0, Number(llmResult.min_exp) || 0),
+        max_exp: Math.max(0, Number(llmResult.max_exp) || 0),
+        max_notice_days: Math.max(0, Number(llmResult.max_notice_days) || 60),
+        max_ctc: Math.max(1, Number(llmResult.max_ctc) || 1),
+        location: String(llmResult.location || 'Noida').slice(0, 80),
+        must_have_skills: skills,
+        weights: {
+          skills: 0.4,
+          experience: 0.3,
+          notice: 0.15,
+          ctc: 0.15
+        },
+        minimum_threshold_score: 65,
+        intake_timestamp: new Date().toISOString(),
+        ai_engine: `Live LLM extraction (${provider}, ${modelName})`
+      };
+    }
   }
 
   const localScorecard = extractScorecardFromJD(rawJdText, title);
   return {
     ...localScorecard,
-    ai_engine: 'Built-in High-Fidelity NLP Engine'
+    ai_engine: 'Deterministic JD extractor (no LLM key configured)'
   };
 }
 

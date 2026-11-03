@@ -1,20 +1,16 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: companya_postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-      POSTGRES_DB: companya_screening
+  app:
+    build: .
+    container_name: shortlist_app
     ports:
-      - "5432:5432"
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_PATH: ./data/screening.db
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d companya_screening"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - app_data:/app/backend/data
+    restart: unless-stopped
 
 volumes:
-  postgres_data:
+  app_data:

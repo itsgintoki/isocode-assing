@@ -1,14 +1,16 @@
 const express = require('express');
-const router = express.Router();
 const db = require('../db/database');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
-router.use(authMiddleware);
+const router = express.Router();
+const INTERNAL_ROLES = ['recruiter', 'delivery_head'];
 
-// Get Delivery Head Weekly Calibration Audit samples
-router.get('/calibration-audits', requireRole(['delivery_head', 'recruiter']), (req, res) => {
+router.use(authMiddleware);
+router.use(requireRole(INTERNAL_ROLES));
+
+router.get('/calibration-audits', (req, res) => {
   const audits = db.prepare(`
-    SELECT 
+    SELECT
       ca.*,
       c.name as candidate_name,
       c.current_role,
@@ -20,13 +22,11 @@ router.get('/calibration-audits', requireRole(['delivery_head', 'recruiter']), (
     ORDER BY ca.created_at DESC
   `).all();
 
-  // Compute calibration statistics
   const totalAudits = audits.length;
-  const alignedCount = audits.filter(a => a.agreement_status === 'aligned').length;
-  const minorDiscrepancies = audits.filter(a => a.agreement_status === 'minor_discrepancy').length;
-  const majorOverrides = audits.filter(a => a.agreement_status === 'major_override').length;
-
-  const alignmentRate = totalAudits > 0 ? Math.round((alignedCount / totalAudits) * 100) : 100;
+  const alignedCount = audits.filter((audit) => audit.agreement_status === 'aligned').length;
+  const minorDiscrepancies = audits.filter((audit) => audit.agreement_status === 'minor_discrepancy').length;
+  const majorOverrides = audits.filter((audit) => audit.agreement_status === 'major_override').length;
+  const alignmentRate = totalAudits > 0 ? Math.round((alignedCount / totalAudits) * 100) : null;
 
   res.json({
     summary: {
@@ -34,27 +34,46 @@ router.get('/calibration-audits', requireRole(['delivery_head', 'recruiter']), (
       alignedCount,
       minorDiscrepancies,
       majorOverrides,
-      alignmentRate: `${alignmentRate}%`,
-      status: alignmentRate >= 80 ? 'Calibrated within target thresholds' : 'Recalibration advised'
+      alignmentRate,
+      status: alignmentRate === null
+        ? 'No weekly sample recorded yet'
+        : alignmentRate >= 80
+          ? 'Within the calibration target'
+          : 'Review overrides with the delivery head'
     },
     audits
   });
 });
 
-// Record a new calibration audit entry for Delivery Head
 router.post('/calibration-audits', requireRole(['delivery_head']), (req, res) => {
-  const {
-    weekLabel,
-    requisitionId,
-    candidateId,
-    aiRank,
-    recruiterRank,
-    agreementStatus,
-    overrideReason
-  } = req.body;
+  const weekLabel = String(req.body?.weekLabel || 'Current week').trim().slice(0, 80);
+  const requisitionId = String(req.body?.requisitionId || '').trim();
+  const candidateId = String(req.body?.candidateId || '').trim();
+  const aiRank = Number(req.body?.aiRank);
+  const recruiterRank = Number(req.body?.recruiterRank);
+  const overrideReason = String(req.body?.overrideReason || '').trim().slice(0, 1000);
 
-  const id = `cal_${Date.now()}`;
+  if (!requisitionId || !candidateId || !Number.isInteger(aiRank) || !Number.isInteger(recruiterRank)) {
+    return res.status(400).json({ error: 'Requisition, candidate and integer ranks are required.' });
+  }
+  if (aiRank < 1 || recruiterRank < 1 || aiRank > 500 || recruiterRank > 500) {
+    return res.status(400).json({ error: 'Ranks must be between 1 and 500.' });
+  }
+
+  const evaluation = db.prepare(`
+    SELECT id FROM cv_evaluations WHERE requisition_id = ? AND candidate_id = ?
+  `).get(requisitionId, candidateId);
+  if (!evaluation) {
+    return res.status(400).json({ error: 'This candidate is not evaluated for that requisition.' });
+  }
+
   const discrepancyScore = Math.abs(aiRank - recruiterRank);
+  const agreementStatus = discrepancyScore === 0
+    ? 'aligned'
+    : discrepancyScore <= 2
+      ? 'minor_discrepancy'
+      : 'major_override';
+  const id = `cal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
   db.prepare(`
     INSERT INTO calibration_audits (
@@ -62,65 +81,49 @@ router.post('/calibration-audits', requireRole(['delivery_head']), (req, res) =>
       discrepancy_score, agreement_status, recruiter_override_reason, audited_by, created_at
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-  `).run(
-    id,
-    weekLabel || 'Current Week',
-    requisitionId,
-    candidateId,
-    aiRank,
-    recruiterRank,
-    discrepancyScore,
-    agreementStatus || (discrepancyScore === 0 ? 'aligned' : 'minor_discrepancy'),
-    overrideReason || 'Audited by Delivery Head',
-    req.user.name
-  );
+  `).run(id, weekLabel, requisitionId, candidateId, aiRank, recruiterRank, discrepancyScore, agreementStatus, overrideReason || 'No override reason recorded.', req.user.name);
 
-  res.json({ success: true, id, discrepancyScore });
+  res.status(201).json({ success: true, id, discrepancyScore, agreementStatus });
 });
 
-// Get Company A Executive KPI Performance & Financial Impact metrics
 router.get('/kpi-metrics', (req, res) => {
-  // Compute real pipeline counts across all active requisitions
-  const totalCandidates = db.prepare('SELECT COUNT(*) as count FROM candidates WHERE is_deleted = 0').get().count;
-  const totalRequisitions = db.prepare('SELECT COUNT(*) as count FROM requisitions').get().count;
-  const submittedCandidates = db.prepare("SELECT COUNT(*) as count FROM cv_evaluations WHERE pipeline_stage IN ('submitted_to_client', 'client_shortlisted', 'interview_scheduled', 'offered', 'joined')").get().count;
-  const shortlistedCandidates = db.prepare("SELECT COUNT(*) as count FROM cv_evaluations WHERE pipeline_stage IN ('client_shortlisted', 'interview_scheduled', 'offered', 'joined')").get().count;
+  const count = (query, ...params) => db.prepare(query).get(...params).count;
 
-  const clientAcceptanceRate = submittedCandidates > 0 
-    ? Math.round((shortlistedCandidates / submittedCandidates) * 100)
-    : 58;
+  const activeRequisitions = count("SELECT COUNT(*) as count FROM requisitions WHERE status IN ('active', 'shortlisting', 'interviews')");
+  const candidates = count('SELECT COUNT(*) as count FROM candidates WHERE is_deleted = 0');
+  const evaluations = count('SELECT COUNT(*) as count FROM cv_evaluations');
+  const verified = count("SELECT COUNT(*) as count FROM cv_evaluations WHERE recruiter_verified = 1");
+  const submitted = count("SELECT COUNT(*) as count FROM cv_evaluations WHERE pipeline_stage IN ('submitted_to_client', 'client_shortlisted', 'interview_scheduled', 'offered', 'joined', 'rejected')");
+  const shortlisted = count("SELECT COUNT(*) as count FROM cv_evaluations WHERE pipeline_stage IN ('client_shortlisted', 'interview_scheduled', 'offered', 'joined')");
+  const interviews = count("SELECT COUNT(*) as count FROM cv_evaluations WHERE pipeline_stage IN ('interview_scheduled', 'offered', 'joined')");
+  const joined = count("SELECT COUNT(*) as count FROM cv_evaluations WHERE pipeline_stage = 'joined'");
+  const clientDecisions = count("SELECT COUNT(*) as count FROM cv_evaluations WHERE pipeline_stage IN ('client_shortlisted', 'interview_scheduled', 'offered', 'joined', 'rejected')");
+
+  const stageRows = db.prepare(`
+    SELECT pipeline_stage, COUNT(*) as count
+    FROM cv_evaluations
+    GROUP BY pipeline_stage
+  `).all();
+  const stageCounts = Object.fromEntries(stageRows.map((row) => [row.pipeline_stage, row.count]));
 
   res.json({
-    kpis: {
-      screening_time_reduction: {
-        target: '60% reduction',
-        achieved: '68% reduction',
-        status: 'Exceeding target',
-        detail: 'Avg CV review time decreased from 3.0 min to 0.95 min with automated quote extraction'
-      },
-      shortlist_turnaround_48h: {
-        target: '80% of requisitions within 48h',
-        achieved: '84.2%',
-        status: 'Within target',
-        detail: 'Average turnaround reduced from 5.0 days to 1.8 days'
-      },
-      client_acceptance_rate: {
-        target: '45% to 60%',
-        achieved: `${clientAcceptanceRate}%`,
-        status: 'Achieved target',
-        detail: `${shortlistedCandidates} shortlisted out of ${submittedCandidates} client submissions`
-      },
-      annual_cost_savings: {
-        recruiter_hours_saved_value: '₹75.6 Lakh / year (21,600 hrs saved)',
-        lost_requisition_fee_salvaged: '₹81.0 Lakh / year (180 requisitions saved)',
-        total_annual_impact: '₹1.57 Crore / year'
-      }
+    summary: {
+      active_requisitions: activeRequisitions,
+      candidates,
+      evaluations,
+      verified,
+      submitted,
+      shortlisted,
+      interviews,
+      joined,
+      client_decisions: clientDecisions,
+      client_acceptance_rate: clientDecisions > 0 ? Math.round((shortlisted / clientDecisions) * 100) : null,
+      verification_rate: evaluations > 0 ? Math.round((verified / evaluations) * 100) : null
     },
-    counts: {
-      totalCandidates,
-      totalRequisitions,
-      submittedCandidates,
-      shortlistedCandidates
+    stage_counts: stageCounts,
+    notes: {
+      acceptance_rate: 'Share of client-reviewed candidates that were shortlisted, interviewed, offered or joined.',
+      verification_rate: 'Share of evaluated CVs a recruiter has explicitly opened and verified.'
     }
   });
 });

@@ -1,160 +1,299 @@
-# Deployment Guide & Local Runbook
+# Deployment and local runbook
 
-## Company A Staffing — AI Resume Screening & Client Shortlist Portal
+## Shortlist — AI-assisted resume screening and client shortlist portal
 
-This application is built for **Company A, Noida** (IT services, banking back-office, and retail staffing firm). It automates resume screening, provides explainable AI scoring with exact CV quotation citations, enforces blind evaluation and quality verification guardrails, provides a mobile-responsive masked client portal, and ensures full compliance with the **Digital Personal Data Protection Act 2023 (DPDP Act)**.
+This runbook covers the implementation in this repository: local development, tests, a production build, Docker, and the operational details a reviewer or pilot team needs. It does not claim a live deployment. Use the steps below to run the application yourself.
 
----
-
-## 1. System Requirements
-
-- **Runtime**: Node.js v18.0.0 or higher (v20+ / v22 recommended)
-- **Language & Frameworks**: **TypeScript** (latest v5.7+ / v7.0 with strict type definitions), **React 19** (Vite 8), **Express 5**
-- **Package Manager**: npm v9.0.0 or higher
-- **Database Engine (Dual-Mode)**:
-  - **PostgreSQL 16** (Production-grade connection pool via `pg.Pool`, complete DDL schema at `backend/src/db/schema.postgres.sql`, pre-configured `docker-compose.yml`)
-  - **Embedded SQLite** (via `better-sqlite3` with WAL mode enabled — automatically used if PostgreSQL is not active so reviewers can run the application immediately with zero database installation or configuration!)
-- **AI Models Supported (Dynamic Model Router)**:
-  - **Dynamic Multi-Provider Router**: Set any model string via `AI_MODEL` environment variable (e.g. OpenAI `gpt-5`, `o3`, `o1`, `gpt-4o`; Google Gemini `gemini-2.5-flash`, `gemini-3.0`, `gemini-2.0-flash`; Anthropic Claude `claude-4-sonnet`, `claude-3-7-sonnet`).
-  - **Built-in Deterministic NLP Citation Engine**: If external API keys are not supplied, the system automatically uses its local high-fidelity NLP quote extractor that cites line-numbered verbatim quotes without hallucination, rate limits, or external dependencies.
-- **Supported Platforms**: Linux, macOS, Windows (WSL / PowerShell)
+All seeded candidates, clients, CVs and contact details are fictional.
 
 ---
 
-## 2. Step-by-Step Local Run
+## 1. Requirements
 
-### Step 1: Clone Repository
+| Requirement | Notes |
+| --- | --- |
+| Node.js 22+ | The backend uses `better-sqlite3`; the PDF generator uses Node 22's built-in WebSocket client. |
+| npm 9+ | Tested with npm 9. |
+| Google Chrome or Chromium | Only needed to rebuild `docs/TDD.pdf` and `submission.zip`. Set `CHROME_BIN` if it is not on `PATH`. |
+| Linux, macOS or Windows | Docker is the simplest path on Windows. |
+
+SQLite is embedded through `better-sqlite3`; no database server is required. There is no PostgreSQL branch in this version.
+
+---
+
+## 2. Local development
+
+### 2.1 Clone and install
+
 ```bash
-git clone <YOUR_GITHUB_REPO_URL>
+git clone <public-repository-url>
 cd isocode-assing
-```
 
-### Step 2: Install All Dependencies
-The project contains a root workspace, a backend API service, and a React Vite frontend:
-```bash
-# Install root orchestration tools
 npm install
-
-# Install backend dependencies (Express, SQLite, pdf-parse, mammoth, etc.)
-cd backend && npm install && cd ..
-
-# Install frontend dependencies (React, Vite, Lucide-React, etc.)
-cd frontend && npm install && cd ..
+npm --prefix backend install
+npm --prefix frontend install
 ```
 
-### Step 3: Run Automated Test Suite
-Verify that all AI scoring logic, quote citations, duplicate detection, PII masking, RBAC security, and DPDP erasure tests pass:
+### 2.2 Optional configuration
+
+The application runs with defaults and no `.env` file. To override defaults:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` at the repository root. The backend loads it on startup. Relative `DATABASE_PATH` values are resolved from the `backend/` directory, so the default `./data/screening.db` becomes `backend/data/screening.db`.
+
+### 2.3 Test
+
 ```bash
 npm test
 ```
-*Expected result: 7/7 tests pass in <1 second.*
 
-### Step 4: Seed Database with Realistic Sample Data
-Populate realistic requisitions, candidate CVs (including sample candidates CND-91022, CND-91047, CND-91088), AI evaluations, DPDP logs, and calibration samples:
-```bash
-npm run seed
-```
+Expected result: **25 tests, 25 passing**. The suite creates and removes `backend/data/test-screening.db`; it never writes to the demo database.
 
-### Step 5: Start Development Servers
-Run backend and frontend concurrently with a single command:
+### 2.4 Start
+
 ```bash
 npm run dev
 ```
 
-Open your browser at:
-- **Frontend App**: `http://localhost:5173/`
-- **Backend API Server**: `http://localhost:4000/api/health`
+- Frontend: `http://localhost:5173`
+- API health check: `http://localhost:4000/api/health`
 
-*(Alternatively, to run in production mode: `npm run build && npm start`, then open `http://localhost:4000/`)*
+The database is created, migrated and seeded automatically the first time the API starts. Stop the process with `Ctrl+C`.
 
----
+Vite proxies `/api` to `http://localhost:4000` in development. If you change `PORT`, update the proxy target in `frontend/vite.config.js` as well.
 
-## 3. Demo Login Details for Reviewer
+### 2.5 Reset the demo data
 
-The application provides an instant **Role Switcher** in the top navigation bar to test all user personas without password friction:
+From the UI, sign in as the delivery head (`rajesh@companya.in`) and use **Reset demo data** on the Insights screen. From the shell:
 
-| Role | Name | Email / Persona | Scope & Key Capabilities |
-| :--- | :--- | :--- | :--- |
-| **Recruiter (Lead)** | **Priya Sharma** | `priya@companya.in` | Full ATS access: JD intake, edit scorecard weights, bulk CV upload, blind screening toggle, inspect cited evidence quotes, perform mandatory CV verification, submit to client shortlist, manage pipeline stages. |
-| **Client Hiring Manager (IT)** | **Vikram Malhotra** | `vikram@hdfctech.com` (VP Engineering, HDFC Tech) | Client Portal: strictly isolated to HDFC Tech requisitions. Evaluates candidate match cards with **masked contact info**, reviews cited quotes, Shortlists, Rejects with reason, Proposes interview slots. |
-| **Client Hiring Manager (Banking)** | **Ananya Sen** | `ananya@standardchartered.com` (Head of AML Operations) | Client Portal: strictly isolated to Standard Chartered KYC Analyst requisition. Evaluates candidates like Arjun Rawat. |
-| **Delivery Head** | **Rajesh Verma** | `rajesh@companya.in` | Executive Oversight: Weekly AI vs Recruiter calibration audits, discrepancy tracking, and ₹1.57 Crore/year business ROI metrics. |
-
-> **Pro-Tip for Reviewers**: Click the **"Reset Data"** button in the navbar at any time to instantly restore clean, fresh sample data.
-
----
-
-## 4. Environment Variables
-
-The application runs out of the box with zero required configuration. For production deployments or optional external services, configure the following environment variables:
-
-| Variable Name | Purpose | Default / Description |
-| :--- | :--- | :--- |
-| `PORT` | Backend HTTP port | `4000` |
-| `NODE_ENV` | Runtime environment mode | `development` or `production` |
-| `DB_TYPE` | Database engine selection | `sqlite` or `postgres` |
-| `DATABASE_PATH` | SQLite database file location | `./backend/data/screening.db` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgres://user:pass@host:5432/dbname` |
-| `POSTGRES_HOST` | PostgreSQL hostname | `localhost` |
-| `POSTGRES_PORT` | PostgreSQL port | `5432` |
-| `POSTGRES_USER` | PostgreSQL user | `postgres` |
-| `POSTGRES_PASSWORD` | PostgreSQL password | None in repo |
-| `POSTGRES_DB` | PostgreSQL database name | `companya_screening` |
-| `AI_PROVIDER` | Preferred LLM provider | `gemini`, `openai`, or `anthropic` |
-| `AI_MODEL` | Preferred AI model identifier | Any model string (e.g. `gpt-5`, `o3`, `gemini-2.5-flash`, `claude-4-sonnet`) |
-| `GEMINI_API_KEY` | *(Optional)* Google Gemini 2.0 API key | Zero external dependencies if omitted (uses built-in engine) |
-| `OPENAI_API_KEY` | *(Optional)* OpenAI API key | Built-in fallback rule engine active |
-| `ANTHROPIC_API_KEY` | *(Optional)* Anthropic Claude API key | Built-in fallback rule engine active |
-| `MAX_FILE_UPLOAD_LIMIT` | Max file upload limit per bulk batch | `500` files |
-
-*(Note: Per submission rules, variable names only are listed; never put secret values in the repository).*
-
----
-
-## 5. Deployment Architecture (Cloud / Docker / Production)
-
-### Containerized Deployment (Docker)
-The application can be packaged into a single lightweight multi-stage Docker container:
-```dockerfile
-# Stage 1: Build Frontend
-FROM node:22-alpine AS frontend-builder
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm install
-COPY frontend ./
-RUN npm run build
-
-# Stage 2: Production Server
-FROM node:22-alpine
-WORKDIR /app
-COPY backend/package*.json ./backend/
-RUN cd backend && npm install --omit=dev
-COPY backend ./backend
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
-ENV NODE_ENV=production
-ENV PORT=4000
-EXPOSE 4000
-CMD ["node", "backend/src/server.js"]
+```bash
+npm run seed
 ```
 
-### Cloud Hosting Options
-1. **Render / Railway / Fly.io**: Connect GitHub repo, specify start command `npm start`, and mount a persistent disk at `/app/backend/data` for SQLite persistence.
-2. **AWS EC2 / DigitalOcean Droplet**: Pull repo, install Node 22, run `npm run build`, and use `pm2 start backend/src/server.js --name "company-a-portal"`.
-3. **Nginx Reverse Proxy**: Reverse proxy port 80/443 to `http://127.0.0.1:4000` with SSL via Let's Encrypt Certbot.
+Both are destructive: they replace requisitions, candidates, evaluations, users, sessions and audit rows with the seed dataset. Stop other writers first.
 
 ---
 
-## 6. Verification Checklist of Evaluated Features
+## 3. Demo accounts
 
-- [x] **JD Scorecard Intake**: AI parses raw JD text into editable scorecard with weights, thresholds, and must-haves.
-- [x] **Bulk CV Upload**: Supports PDF, DOCX, and TXT with SHA-256 duplicate file & profile detection.
-- [x] **AI CV Scoring with Exact Evidence Quotes**: Quotes verbatim lines from CV with line numbers for every criterion.
-- [x] **AI Uncertainty Handling**: Flags missing criteria (e.g. notice period omitted) with low confidence indicators.
-- [x] **Anti-Auto-Rejection Guarantee**: No candidate is auto-rejected; low scorers remain fully searchable and filterable.
-- [x] **Blind Screening Mode**: One-click toggle hides candidate name, email, phone, gender, and demographics during evaluation.
-- [x] **Mandatory Recruiter CV Verification**: Recruiter must open and verify CV before client portal submission is unlocked.
-- [x] **Client Shortlist Portal**: Clean, mobile-friendly interface with masked contact details, structured rejection reasons, and interview slot picker.
-- [x] **8-Stage Requisition Pipeline**: Kanban tracking from Sourced to Joined.
-- [x] **DPDP Act 2023 Compliance**: Verified consent records, right-to-erasure execution, and immutable access audit log.
-- [x] **Delivery Head Calibration**: Weekly sample auditing AI rank vs recruiter choice agreement + ₹1.57 Crore/year ROI dashboard.
-- [x] **Automated Tests**: Comprehensive test suite covering core scoring, parsing, deduplication, security, and DPDP compliance.
+All seeded accounts use the password **`demo1234`**. The API returns account metadata but never password hashes.
+
+| Role | Name | Email | Scope |
+| --- | --- | --- | --- |
+| Recruiter | Priya Sharma | `priya@companya.in` | Company A internal workspace |
+| Client hiring manager | Vikram Malhotra | `vikram@hdfctech.com` | HDFC Tech Platform only |
+| Client hiring manager | Ananya Sen | `ananya@standardchartered.com` | Standard Chartered only |
+| Delivery head | Rajesh Verma | `rajesh@companya.in` | Internal workspace, calibration, demo reset |
+
+These accounts exist for review. Remove or replace them before using the application with real candidate data.
+
+---
+
+## 4. Environment variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `4000` | API and production frontend port. |
+| `NODE_ENV` | `development` | Set to `production` behind HTTPS. This makes the session cookie `Secure`. |
+| `DATABASE_PATH` | `./data/screening.db` | SQLite file, resolved from `backend/`. Parent directories are created automatically. |
+| `CORS_ORIGIN` | unset | Comma-separated browser origins allowed to call the API with cookies. Required in production only when the SPA and API use different origins. |
+| `MAX_BULK_UPLOAD_FILES` | `500` | Maximum number of files accepted in one upload request. |
+| `AI_PROVIDER` | unset | Optional JD-intake provider: `gemini`, `openai` or `anthropic`. |
+| `AI_MODEL` | unset | Optional model name for the selected provider. |
+| `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | unset | Optional keys. Without them, JD intake uses the local deterministic extractor. CV scoring is always local. |
+| `GEMINI_MODEL` / `OPENAI_MODEL` / `ANTHROPIC_MODEL` | unset | Optional provider-specific model overrides. |
+| `CHROME_BIN` | unset | Path to Chrome or Chromium for PDF generation only. |
+
+Do not commit `.env` or provider keys. `.gitignore` excludes `.env`; `.env.example` contains names and safe defaults only. The AI keys are used only by the optional JD-to-scorecard call; they are never needed for tests or CV scoring.
+
+---
+
+## 5. Production build
+
+```bash
+npm run build
+NODE_ENV=production npm start
+```
+
+The Express server serves the built SPA from `frontend/dist` and the API from `/api` on port `4000`.
+
+**HTTPS is required when `NODE_ENV=production`.** The session cookie is marked `Secure`, so it will not be stored over plain HTTP. Put the app behind a TLS-terminating reverse proxy (for example Caddy, nginx with Let's Encrypt, or a platform load balancer). The app sets `trust proxy` so client IPs are read from the forwarded headers.
+
+A minimal nginx location:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:4000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+In development, cross-origin requests are allowed for convenience. In production, set `CORS_ORIGIN` to the SPA's exact origin (for example `https://shortlist.example.com`) if the frontend and API are on different hosts. Same-origin deployments do not need it, and unlisted origins are rejected.
+
+---
+
+## 6. Docker
+
+```bash
+docker compose up --build -d
+docker compose logs -f app
+```
+
+Open `http://localhost:4000`.
+
+The compose file mounts the named volume `app_data` at `/app/backend/data`, so the SQLite database survives container restarts. To remove the database as well:
+
+```bash
+docker compose down -v
+```
+
+The container uses `NODE_ENV=production`, so put a TLS proxy in front of it for non-local use. The image builds the frontend and installs backend runtime dependencies; it is a single-container deployment, not a horizontally scaled service.
+
+---
+
+## 7. Hosted environments
+
+SQLite works on a single instance with a persistent disk. For a small pilot:
+
+1. Deploy the repository to a platform that supports a persistent volume or disk.
+2. Mount the volume at `/app/backend/data`.
+3. Set `NODE_ENV=production`, `PORT` as required by the platform, and `DATABASE_PATH=./data/screening.db`.
+4. Terminate TLS at the platform or reverse proxy.
+5. Replace the seeded database and demo accounts before collecting real data.
+6. Back up the SQLite file and its `-wal`/`-shm` sidecars together.
+
+This repository does **not** include a live URL. A deployment is only useful once the operator has completed the security and data-protection work below.
+
+For more than one API instance, move to a managed relational database and shared rate limiting first. SQLite is a deliberate review and pilot choice, not a scale-out database.
+
+---
+
+## 8. Data operations
+
+### 8.1 Backup
+
+Stop the API or use SQLite's online backup API, then copy:
+
+```text
+backend/data/screening.db
+backend/data/screening.db-wal
+backend/data/screening.db-shm
+```
+
+Copying only the main file while the process is writing can lose recent transactions.
+
+### 8.2 Erasure
+
+An internal reviewer can erase a candidate from **Compliance** or by calling:
+
+```http
+POST /api/dpdp/erasure-request
+Content-Type: application/json
+
+{ "candidateId": "CND-91022", "reason": "Data subject request" }
+```
+
+Erasure clears direct identifiers, CV text and derived profile fields; clears evaluation evidence, notes and interview slots; marks the candidate deleted; and writes a `candidate_deletion` audit row. The API returns a purge receipt. Test this path against the demo data before relying on it in a pilot.
+
+### 8.3 Logs and retention
+
+The compliance screen exposes access logs and consent records. Audit rows survive candidate erasure by design. The prototype does not implement automated retention expiry; a production operator must define and enforce retention periods.
+
+---
+
+## 9. Rebuilding the submission files
+
+The Technical Design Document source is `docs/TDD.md`. To regenerate the PDF:
+
+```bash
+npm run tdd:pdf
+```
+
+This renders the Markdown to styled HTML, starts headless Chrome, and prints an A4 PDF with a cover, contents page and page numbers. If Chrome is not on `PATH`, set `CHROME_BIN`:
+
+```bash
+CHROME_BIN=/path/to/google-chrome npm run tdd:pdf
+```
+
+To create the submission archive:
+
+```bash
+npm run package-zip
+```
+
+`submission.zip` contains exactly two files: `TDD.pdf` and `deployment.md`. The packaging script refuses to run without the PDF and reports the final archive size. The current document is well under the 25 MB submission limit.
+
+---
+
+## 10. Verification checklist
+
+Run this before handing the build to a reviewer:
+
+```bash
+npm test
+npm run build
+cd frontend && npx tsc --noEmit && cd ..
+npm run tdd:pdf
+npm run package-zip
+unzip -l submission.zip
+```
+
+Then, with the app running:
+
+- [ ] Sign in as each of the four demo accounts.
+- [ ] Confirm the client account sees only its own client company.
+- [ ] Create or edit a scorecard and confirm candidates are re-scored.
+- [ ] Upload the sample CVs and confirm the batch report.
+- [ ] Open an AI-screened CV, verify it, and submit it to the client.
+- [ ] Attempt to submit an unverified candidate and confirm it is blocked.
+- [ ] Shortlist, pass and propose slots from the client portal.
+- [ ] Confirm contact details are masked and no raw CV is exposed to the client.
+- [ ] Erase a candidate and confirm the receipt and audit row.
+- [ ] Run the reset-demo action and confirm the seed state returns.
+
+---
+
+## 11. Troubleshooting
+
+**`better-sqlite3` fails to install**
+Use Node 22 and a build toolchain (`python3`, `make`, `g++` on Debian/Ubuntu). The Dockerfile installs these for the native module build.
+
+**Port 5173 or 4000 is already in use**
+Stop the other process or change `PORT`. If you change the API port, update the Vite proxy target in `frontend/vite.config.js`.
+
+**Sign-in appears to succeed but the session does not persist**
+Check `NODE_ENV`. In production the cookie is `Secure`; use HTTPS (or a TLS-terminating proxy). Also check that the browser is not blocking cookies for the host.
+
+**Upload rejects a scanned PDF**
+Only text-layer PDFs are supported. Scanned/image-only PDFs are reported as unreadable rather than silently accepted.
+
+**`npm run tdd:pdf` cannot find Chrome**
+Install Chrome/Chromium or point `CHROME_BIN` at the executable.
+
+**Client sees an empty shortlist**
+The client portal only shows candidates that a recruiter has verified and submitted. Use the recruiter account to move a candidate to `submitted_to_client` first.
+
+**Client sees another client's requisition**
+That is a bug. The tenant guard should reject it with 403. Capture the request and check `client_company` scoping in `backend/src/middleware/auth.js` and `backend/src/routes/client.js`; do not rely on the UI to hide the record.
+
+---
+
+## 12. Known production gaps
+
+Before using real candidate data, address these explicitly:
+
+- Replace demo accounts and seeded data; remove the delivery-head demo reset or protect it operationally.
+- Set `CORS_ORIGIN` to the real frontend origin for a split-origin deployment.
+- Move login rate limiting to a shared store if more than one API instance is used.
+- Add a candidate-facing consent and withdrawal journey.
+- Add retention expiry, encryption at rest and a formal DPDP review.
+- Add phishing/malware scanning and a document parser confidence report for uploads.
+- Add automated browser tests for the critical sign-in, upload, verification and client-decision flows.
+- Measure pilot outcomes before making any time-saving or ROI claim.
+
+The Technical Design Document records the same limitations and the reasoning behind the scope.

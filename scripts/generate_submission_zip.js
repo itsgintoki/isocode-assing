@@ -1,62 +1,91 @@
+#!/usr/bin/env node
+/**
+ * Build the two-file submission archive:
+ *   submission.zip
+ *     ├── TDD.pdf
+ *     └── deployment.md
+ */
+
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { generateTddPdf } = require('./generate_tdd_pdf');
 
-function createSubmissionZip() {
+function assertPublicRepositoryUrl() {
+  const tddMarkdown = fs.readFileSync(path.join(__dirname, '../docs/TDD.md'), 'utf8');
+  const repository = tddMarkdown.match(/\*\*Public repository:\*\*\s*`?([^`\n]+)`?/i)?.[1]?.trim();
+
+  if (!repository || !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+/i.test(repository)) {
+    throw new Error(
+      'docs/TDD.md needs a real public GitHub repository URL before packaging the submission.'
+    );
+  }
+  if (/\[owner\]|your-org|your-repo|example\.com/i.test(repository)) {
+    throw new Error(`Replace the placeholder repository URL in docs/TDD.md: ${repository}`);
+  }
+  return repository;
+}
+
+async function createSubmissionZip() {
   const rootDir = path.join(__dirname, '..');
   const tddPdf = path.join(rootDir, 'docs/TDD.pdf');
   const deploymentMd = path.join(rootDir, 'deployment.md');
   const stagingDir = path.join(rootDir, 'staging_submission');
   const zipOutput = path.join(rootDir, 'submission.zip');
 
+  const repository = assertPublicRepositoryUrl();
+
   console.log('Generating latest TDD PDF...');
-  generateTddPdf();
+  await generateTddPdf({ quiet: false });
 
-  // Wait briefly for file stream flush
-  setTimeout(() => {
-    if (!fs.existsSync(tddPdf)) {
-      throw new Error(`TDD PDF not found at ${tddPdf}`);
-    }
-    if (!fs.existsSync(deploymentMd)) {
-      throw new Error(`deployment.md not found at ${deploymentMd}`);
-    }
+  if (!fs.existsSync(tddPdf)) throw new Error(`TDD PDF not found at ${tddPdf}`);
+  if (!fs.existsSync(deploymentMd)) throw new Error(`deployment.md not found at ${deploymentMd}`);
 
-    if (!fs.existsSync(stagingDir)) {
-      fs.mkdirSync(stagingDir, { recursive: true });
-    }
+  fs.rmSync(stagingDir, { recursive: true, force: true });
+  fs.mkdirSync(stagingDir, { recursive: true });
+  fs.copyFileSync(tddPdf, path.join(stagingDir, 'TDD.pdf'));
+  fs.copyFileSync(deploymentMd, path.join(stagingDir, 'deployment.md'));
 
-    // Copy exact 2 required files
-    fs.copyFileSync(tddPdf, path.join(stagingDir, 'TDD.pdf'));
-    fs.copyFileSync(deploymentMd, path.join(stagingDir, 'deployment.md'));
+  fs.rmSync(zipOutput, { force: true });
+  execFileSync('zip', ['-j', zipOutput, path.join(stagingDir, 'TDD.pdf'), path.join(stagingDir, 'deployment.md')], {
+    cwd: rootDir,
+    stdio: 'inherit'
+  });
+  fs.rmSync(stagingDir, { recursive: true, force: true });
 
-    // Remove old zip if present
-    if (fs.existsSync(zipOutput)) {
-      fs.unlinkSync(zipOutput);
-    }
+  const size = fs.statSync(zipOutput).size;
+  if (size > 25 * 1024 * 1024) {
+    throw new Error(`submission.zip is ${(size / 1024 / 1024).toFixed(1)} MB, over the 25 MB limit.`);
+  }
 
-    // Zip files using zip -j
-    execSync(`zip -j "${zipOutput}" "${path.join(stagingDir, 'TDD.pdf')}" "${path.join(stagingDir, 'deployment.md')}"`, {
-      cwd: rootDir,
-      stdio: 'inherit'
-    });
+  const listing = execFileSync('unzip', ['-l', zipOutput], { encoding: 'utf8' });
+  const files = listing
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .filter((parts) => parts.length === 4 && /\d{2}-\d{2}-\d{4}/.test(parts[1]))
+    .map((parts) => parts[3])
+    .filter(Boolean)
+    .sort();
 
-    // Clean up staging dir
-    fs.rmSync(stagingDir, { recursive: true, force: true });
+  if (files.join(',') !== 'TDD.pdf,deployment.md') {
+    throw new Error(`submission.zip contains unexpected files: ${files.join(', ')}`);
+  }
 
-    const stats = fs.statSync(zipOutput);
-    console.log('\n=============================================');
-    console.log('SUCCESS: Submission ZIP Package Ready!');
-    console.log(`File: ${zipOutput}`);
-    console.log(`Size: ${(stats.size / 1024).toFixed(2)} KB (Limit: 25 MB)`);
-    console.log('Archive contents:');
-    execSync(`unzip -l "${zipOutput}"`, { stdio: 'inherit' });
-    console.log('=============================================\n');
-  }, 1000);
+  console.log('\n=============================================');
+  console.log('SUCCESS: Submission ZIP package ready');
+  console.log(`Repository: ${repository}`);
+  console.log(`File: ${zipOutput}`);
+  console.log(`Size: ${(size / 1024).toFixed(1)} KB (limit: 25 MB)`);
+  console.log('Archive contents:');
+  console.log(listing.trim());
+  console.log('=============================================\n');
 }
 
 if (require.main === module) {
-  createSubmissionZip();
+  createSubmissionZip().catch((error) => {
+    console.error(`Submission packaging failed: ${error.message}`);
+    process.exit(1);
+  });
 }
 
 module.exports = { createSubmissionZip };

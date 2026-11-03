@@ -1,90 +1,150 @@
-# Company A Staffing — AI Resume Screening & Client Shortlist Portal
+# Shortlist
 
-[![Tests](https://img.shields.io/badge/tests-7%2F7%20passing-brightgreen.svg)](https://github.com/ankitsinha/companya-ai-recruiter-workspace)
-[![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-blue.svg)](https://nodejs.org)
-[![Compliance](https://img.shields.io/badge/DPDP%20Act-2023%20Compliant-emerald.svg)](https://meity.gov.in)
-[![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
+### AI-assisted resume screening and client shortlist portal
 
-An end-to-end recruitment intelligence system built for **Company A, Noida** (IT services, banking back-office, and retail staffing firm; 120 staff, 70 recruiters, ₹40–50 crore annual revenue).
+A working full-stack prototype built for the Company A Staffing brief: turn a job description into a scorecard, screen CVs in bulk, keep every score backed by evidence, and give clients a clean shortlist portal without exposing candidate contact details.
 
----
+Demo build only. Every candidate, client and CV in the seed data is fictional. No live deployment, customer adoption or performance result is claimed.
 
-## 🌟 Executive Highlights
+![Shortlist sign-in](docs/screenshots/sign-in.png)
 
-- **The Problem**: 300 requisitions/month × 120 CVs each × 3 min/CV = 1,800 hours/month = 21,600 hours/year × ₹350 = **₹75.6 lakh**. Shortlists take 5 days; 5% lost to rivals = **₹81 lakh**. Total loss: **₹1.57 crore/year**.
-- **The Solution**: Explainable AI scoring with **exact CV quotes cited for every criterion**, **blind screening mode**, **mandatory recruiter quality checks**, **masked client portal**, **pipeline tracking**, and **DPDP Act 2023 compliance**.
-- **Financial Return**:
-  - Screening time per requisition reduced by **68%** (exceeding 60% goal).
-  - Shortlist delivered in **<48 hours for 84%** of requisitions (exceeding 80% goal).
-  - Client acceptance rate boosted to **58%** (moving toward 60% target).
-  - Saves Company A **₹1.57 Crore annually**.
+## What it does
 
----
+1. A recruiter turns a job description into an editable scorecard.
+2. CVs are uploaded in bulk (PDF, DOCX or TXT), parsed, deduplicated and scored.
+3. Matched criteria carry a verbatim CV quote and line number; missing evidence is called out explicitly, with a confidence level.
+4. A recruiter must open the CV and explicitly verify it before it can be submitted.
+5. The client sees only recruiter-verified profiles, with names, emails and phones masked.
+6. The client can shortlist, pass with a reason, or propose interview slots.
+7. CV opens, verification, stage changes, client decisions and erasure are written to an audit log.
 
-## 🚀 1-Minute Quick Start
+Nothing is auto-rejected. Low scorers stay in the ranked list and remain searchable.
 
-### 1. Install & Test
+## Why the workflow is trustworthy
+
+- **Evidence over vibes.** Scoring is deterministic matching against the scorecard. Every criterion shows the quote it matched, or says that the evidence is missing.
+- **Uncertainty is explicit.** Missing notice periods, missing CTC and below-band experience are flagged with low confidence instead of being guessed or treated as rejection reasons.
+- **A human gate before the client.** `POST /api/candidates/:id/verify` rejects the request unless that recruiter has a recorded `view_unmasked_cv` audit event for that candidate and requisition.
+- **Clients cannot browse the database.** Client routes are scoped to the client's own requisitions, return masked contacts, and never return raw CV text.
+- **Deletion means deletion.** Erasure clears the CV text, direct identifiers and derived profile fields, clears evaluation evidence, and keeps only the audit trail and purge receipt.
+- **No invented metrics.** The insights screen reports real counts from the database. Any future ROI or time-saving claim should come from a measured pilot, not a dashboard placeholder.
+
+## Quick start
+
+Requirements: Node.js 22+, npm 9+, and Chrome if you want to rebuild the TDD PDF.
+
 ```bash
-# Clone and install dependencies
-git clone https://github.com/ankitsinha/companya-ai-recruiter-workspace.git
-cd companya-ai-recruiter-workspace
-npm install && cd backend && npm install && cd ../frontend && npm install && cd ..
+git clone <public-repository-url>
+cd isocode-assing
 
-# Run automated tests (7/7 pass in <1 sec)
+npm install
+npm --prefix backend install
+npm --prefix frontend install
+
+npm test
+npm run dev
+```
+
+Open `http://localhost:5173`.
+
+The SQLite database is created and seeded automatically on first boot. To run the production build instead:
+
+```bash
+npm run build
+npm start
+# http://localhost:4000
+```
+
+With Docker:
+
+```bash
+docker compose up --build
+# http://localhost:4000
+```
+
+See [`deployment.md`](deployment.md) for the full runbook, environment variables and production notes.
+
+## Demo accounts
+
+All seeded accounts use the password **`demo1234`**. The sign-in screen lists them; passwords are never returned by the API.
+
+| Role | Name | Email | Scope |
+| --- | --- | --- | --- |
+| Recruiter | Priya Sharma | `priya@companya.in` | Company A workspace |
+| Client hiring manager | Vikram Malhotra | `vikram@hdfctech.com` | HDFC Tech Platform only |
+| Client hiring manager | Ananya Sen | `ananya@standardchartered.com` | Standard Chartered only |
+| Delivery head | Rajesh Verma | `rajesh@companya.in` | Internal workspace, calibration, demo reset |
+
+The delivery-head account can restore the demo dataset from the Insights screen. This is a demo convenience, not production administration.
+
+## Screens
+
+| Recruiter workspace | Client shortlist |
+| --- | --- |
+| ![Ranked candidates](docs/screenshots/recruiter-candidates.png) | ![Client shortlist](docs/screenshots/client-shortlist.png) |
+
+The client portal is deliberately narrower than the recruiter workspace: evidence and recruiter notes are visible, raw CVs and contact details are not.
+
+## How the main pieces fit
+
+```
+React 19 + Vite 8 SPA
+        │  HttpOnly session cookie
+        ▼
+Express 5 API
+  auth → role guard → tenant guard
+  auth · requisitions · candidates · pipeline · client · dpdp · analytics
+        ▼
+SQLite (better-sqlite3, WAL)
+  users · sessions · requisitions · candidates
+  cv_evaluations · access_audit_logs · calibration_audits
+```
+
+- **Frontend:** React 19, TypeScript, Vite 8, custom responsive CSS.
+- **Backend:** Node.js 22, Express 5.
+- **Database:** SQLite with WAL mode; the schema is created on boot and seeded when empty.
+- **Auth:** `scrypt` password hashes, random session tokens stored as SHA-256 hashes, HttpOnly `shortlist_session` cookie.
+- **Parsing:** `pdf-parse` and `mammoth`; uploads stay in memory and are never written to disk.
+- **Scoring:** local deterministic evidence matcher. An optional LLM is used only for JD-to-scorecard intake, with a deterministic fallback.
+- **Tests:** Node's test runner and Supertest; 25 backend tests.
+
+## Testing
+
+```bash
 npm test
 ```
 
-### 2. Seed Realistic Sample Data
-```bash
-npm run seed
-```
+The suite uses a disposable `backend/data/test-screening.db` and covers parsing, evidence quoting, uncertainty, blind screening, PII masking, deduplication, auth cookies, rate limiting, role and tenant boundaries, the CV-view verification gate, scorecard validation, bulk upload, client decisions, and DPDP erasure.
 
-### 3. Start Development Server
-```bash
-npm run dev
-```
-Open **`http://localhost:5173/`** in your browser.
+Manual checks against the running app covered sign-in for every role, scorecard re-scoring, a three-CV upload, verification and submission, client shortlist/pass/slot flows, erasure, and desktop/mobile layouts.
 
-*(For production mode: `npm run build && npm start` at `http://localhost:4000/`)*
+## Limitations
 
----
+This is a credible core slice, not a production ATS.
 
-## 👤 Reviewer Demo Accounts & Role Switcher
+- Heuristic CV parsing and exact-word skill matching; no OCR, semantic search or trained ranking model.
+- SQLite and an in-memory login limiter are single-instance choices.
+- Client contact masking is a product control, not encryption.
+- Consent capture is recorded in the demo; there is no candidate-facing consent or withdrawal journey.
+- No email/calendar integrations, background queue, MFA, SSO or malware scanning.
+- Audit logs are append-only by application convention, not database permissions.
+- No automated browser test suite; manual CDP checks were used during development.
 
-Use the top navigation bar's **Role Switcher** to test all personas seamlessly:
+The Technical Design Document discusses these trade-offs and the production path in more detail.
 
-| Role | Demo User | Organization | Access & Features |
-| :--- | :--- | :--- | :--- |
-| **Lead Recruiter** | **Priya Sharma** (`priya@companya.in`) | Company A Staffing | JD intake, edit scorecard weights, bulk CV upload, blind screening toggle, inspect evidence quotes, recruiter CV verification gate, batch submit to client. |
-| **Client Hiring Manager (IT)** | **Vikram Malhotra** (`vikram@hdfctech.com`) | HDFC Tech Platform | Client Shortlist Portal: strictly isolated to HDFC Tech requisitions. Masked candidate identities (e.g. `Ritika B. (CND-91022)`), review evidence quotes, Shortlist, Reject with reason, Propose interview slots. |
-| **Client Hiring Manager (Banking)** | **Ananya Sen** (`ananya@standardchartered.com`) | Standard Chartered Global Back-Office | Client Shortlist Portal: strictly isolated to Standard Chartered KYC Analyst requisition. Evaluates candidates like Arjun Rawat. |
-| **Delivery Head** | **Rajesh Verma** (`rajesh@companya.in`) | Company A Staffing | Weekly AI rank vs recruiter choice calibration samples, discrepancy auditing, and ₹1.57 Crore/year ROI metrics. |
+## Submission artifacts
 
-> **Reset Button**: Click **"Reset Data"** in the top navigation bar at any point to restore the clean initial state.
+- [`docs/TDD.pdf`](docs/TDD.pdf) — the Technical Design Document.
+- [`deployment.md`](deployment.md) — local, Docker and production deployment guide.
 
----
+Rebuild both submission files with:
 
-## 📸 Key Screens & Features
-
-1. **Ranked Candidates & Explainable AI**: Candidates scored 0–100% against scorecard criteria with exact verbatim quotes cited from the CV with line numbers.
-2. **Anti-Auto-Rejection Guarantee**: AI never auto-rejects any candidate. Low scorers remain fully searchable and filterable.
-3. **Blind Screening Mode**: One-click toggle hides candidate name, email, phone, gender, and demographics to ensure bias-free screening.
-4. **Mandatory Recruiter CV Verification**: Recruiter must open and verify the CV before submission to client portal is unlocked.
-5. **Masked Client Shortlist Portal**: Clean, professional, mobile-friendly interface with masked contact details, structured rejection reasons, and interview slot proposals.
-6. **Requisition Pipeline Kanban**: 8-stage visual workflow tracking candidates from Sourced to Joined.
-7. **DPDP Act 2023 Compliance**: Verified consent records, access audit trail (who viewed what), and Right to Erasure execution with cryptographic purge receipts.
-8. **Delivery Head Calibration**: Weekly sample auditing AI rank vs recruiter choice agreement to detect algorithmic drift.
-
----
-
-## 📦 Submission Artifacts
-
-Per task instructions, the submission archive contains:
-1. **`TDD.pdf`**: Comprehensive Technical Design Document (Architecture, Data Model, AI Algorithms, DPDP Compliance, UI decisions, Trade-offs).
-2. **`deployment.md`**: Complete local and cloud deployment guide, environment variables list, and test credentials.
-
-Generate the submission ZIP at any time with:
 ```bash
 npm run package-zip
 ```
-*(Produces `submission.zip` ~20 KB, well within the 25 MB limit).*
+
+This regenerates `docs/TDD.pdf` from [`docs/TDD.md`](docs/TDD.md) using headless Chrome, then creates `submission.zip` containing only `TDD.pdf` and `deployment.md`.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).

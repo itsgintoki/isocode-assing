@@ -40,16 +40,21 @@ async function extractRawTextFromFile(buffer, mimeType, filename = '') {
 function parseResumeDetails(rawText, filename = '') {
   const text = (rawText || '').trim();
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const warnings = [];
 
   // 1. Email extraction
-  const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/i;
+  const emailRegex = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i;
   const emailMatch = text.match(emailRegex);
-  const email = emailMatch ? emailMatch[1].toLowerCase() : `candidate.${Date.now()}@inbox.mock`;
+  const email = emailMatch ? emailMatch[1].toLowerCase() : '';
+  if (!email) warnings.push('No email address found in the CV.');
 
-  // 2. Phone extraction
-  const phoneRegex = /(?:\+?91[\s-]?)?[6789]\d{9}|\+?[1-9]\d{1,14}/;
-  const phoneMatch = text.match(phoneRegex);
-  const phone = phoneMatch ? phoneMatch[0].replace(/\s+/g, '') : '+91 98000 00000';
+  // 2. Phone extraction. Prefer an Indian mobile number; only then consider an
+  // international number with an explicit country code.
+  const phoneRegex = /(?:\+91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}\b/;
+  const internationalPhoneRegex = /\+\d{1,3}[\s-]?(?:\d[\s-]?){7,14}\b/;
+  const phoneMatch = text.match(phoneRegex) || text.match(internationalPhoneRegex);
+  const phone = phoneMatch ? phoneMatch[0].replace(/\s+/g, '') : '';
+  if (!phone) warnings.push('No phone number found in the CV.');
 
   // 3. Name extraction
   let name = '';
@@ -77,9 +82,11 @@ function parseResumeDetails(rawText, filename = '') {
   // 4. Current Role extraction
   let currentRole = 'Professional';
   const roleKeywords = [
-    'Senior Java Developer', 'Java Developer', 'KYC Analyst', 'Senior KYC Analyst',
-    'Full Stack Engineer', 'Backend Engineer', 'Retail Store Manager', 'Store Ops Lead',
-    'Software Engineer', 'Technical Lead', 'Data Analyst', 'DevOps Engineer'
+    'Senior Java Developer', 'Java Developer', 'Backend Architect', 'Software Architect',
+    'Senior KYC Analyst', 'KYC Analyst', 'AML Analyst', 'Compliance Analyst',
+    'Full Stack Engineer', 'Backend Engineer', 'Frontend Engineer',
+    'Retail Store Operations Lead', 'Retail Store Manager', 'Store Operations Lead',
+    'Technical Lead', 'Software Engineer', 'Data Analyst', 'DevOps Engineer'
   ];
   for (const role of roleKeywords) {
     if (new RegExp(role, 'i').test(text)) {
@@ -88,43 +95,46 @@ function parseResumeDetails(rawText, filename = '') {
     }
   }
 
-  // 5. Total Experience extraction (in years)
-  let totalExpYears = 3.0;
-  const expMatch = text.match(/(\d+(?:\.\d+)?)\+?\s*(?:yrs|years|year)(?:\s*(?:of)?\s*experience)?/i);
+  // 5. Total experience. Prefer an explicit statement; otherwise estimate from
+  // employment year ranges and flag the estimate for recruiter verification.
+  let totalExpYears = 0;
+  const expMatch = text.match(/(\d+(?:\.\d+)?)\s*\+?\s*(?:yrs?|years?)(?:\s*(?:of)?\s*(?:relevant\s*|total\s*)?experience)?/i);
   if (expMatch) {
     totalExpYears = parseFloat(expMatch[1]);
   } else {
-    // Try scanning year ranges: 2018 - 2024
-    const years = text.match(/\b(20[0-2][0-9]|199[0-9])\b/g);
+    const years = text.match(/\b(19[89][0-9]|20[0-2][0-9])\b/g);
     if (years && years.length >= 2) {
       const numYears = years.map(Number).sort((a, b) => a - b);
       const minYear = numYears[0];
       const maxYear = Math.min(new Date().getFullYear(), numYears[numYears.length - 1]);
       if (maxYear - minYear > 0 && maxYear - minYear < 35) {
         totalExpYears = maxYear - minYear;
+        warnings.push('Total experience was estimated from year ranges. Confirm it on the screening call.');
       }
     }
   }
+  if (!totalExpYears) warnings.push('Total experience could not be determined from the CV.');
 
-  // 6. Notice Period extraction (in days)
-  let noticePeriodDays = 60; // standard default
-  if (/immediate|0\s*days|ready to join immediately/i.test(text)) {
+  // 6. Notice period. Do not invent a default: a missing value is meaningful
+  // information and must be confirmed by a recruiter.
+  let noticePeriodDays = null;
+  const noticeLine = (text.match(/[^\n]*\bnotice\b[^\n]*/i) || [''])[0]
+    || (text.match(/[^\n]*\b(?:availability|available|immediate|joining|joiner)\b[^\n]*/i) || [''])[0];
+  const dayMatch = noticeLine.match(/(\d+)\s*(?:calendar\s*)?days?/i)
+    || text.match(/(\d+)\s*days?\s*(?:remaining|notice)/i);
+  const weekMatch = noticeLine.match(/(\d+)\s*weeks?/i);
+  const monthMatch = noticeLine.match(/(\d+(?:\.\d+)?)\s*months?/i);
+  if (dayMatch) {
+    noticePeriodDays = parseInt(dayMatch[1], 10);
+  } else if (weekMatch) {
+    noticePeriodDays = parseInt(weekMatch[1], 10) * 7;
+  } else if (monthMatch) {
+    noticePeriodDays = Math.round(parseFloat(monthMatch[1]) * 30);
+  } else if (/\b(?:immediate(?:ly)?|ready to join immediately|available immediately)\b/i.test(noticeLine)) {
     noticePeriodDays = 0;
-  } else if (/15\s*days/i.test(text)) {
-    noticePeriodDays = 15;
-  } else if (/30\s*days|1\s*month/i.test(text)) {
-    noticePeriodDays = 30;
-  } else if (/45\s*days/i.test(text)) {
-    noticePeriodDays = 45;
-  } else if (/60\s*days|2\s*months/i.test(text)) {
-    noticePeriodDays = 60;
-  } else if (/90\s*days|3\s*months/i.test(text)) {
-    noticePeriodDays = 90;
-  } else {
-    const rawNoticeMatch = text.match(/notice(?:\s*period)?\s*[:=-]?\s*(\d+)\s*days/i);
-    if (rawNoticeMatch) {
-      noticePeriodDays = parseInt(rawNoticeMatch[1], 10);
-    }
+  }
+  if (noticePeriodDays === null) {
+    warnings.push('Notice period was not found. The recruiter must confirm availability.');
   }
 
   // 7. CTC extraction
@@ -137,12 +147,13 @@ function parseResumeDetails(rawText, filename = '') {
   const expCtcMatch = text.match(/(?:expected\s*ctc|ectc)\s*[:=-]?\s*₹?\s*(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?)/i);
   if (expCtcMatch) {
     expectedCtc = parseFloat(expCtcMatch[1]);
-  } else if (currentCtc) {
-    expectedCtc = +(currentCtc * 1.25).toFixed(1);
+  }
+  if (!expectedCtc) {
+    warnings.push('Expected CTC was not found in the CV.');
   }
 
   // 8. Location
-  let location = 'Noida';
+  let location = null;
   const cities = ['Noida', 'Gurugram', 'Gurgaon', 'Delhi NCR', 'Bengaluru', 'Bangalore', 'Mumbai', 'Hyderabad', 'Pune', 'Chennai'];
   for (const city of cities) {
     if (new RegExp(`\\b${city}\\b`, 'i').test(text)) {
@@ -170,7 +181,8 @@ function parseResumeDetails(rawText, filename = '') {
     expected_ctc: expectedCtc,
     notice_period_days: noticePeriodDays,
     location,
-    raw_cv_text: text
+    raw_cv_text: text,
+    parse_warnings: warnings
   };
 }
 

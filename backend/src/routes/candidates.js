@@ -1,52 +1,91 @@
 const express = require('express');
-const router = express.Router();
 const multer = require('multer');
+const path = require('path');
 const db = require('../db/database');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 const { extractRawTextFromFile, parseResumeDetails } = require('../services/cv_parser');
 const { checkDuplicate, calculateFileHash } = require('../services/duplicate_detector');
-const { scoreCandidate, sanitizeForBlindScoring } = require('../services/ai_scorer');
+const { scoreCandidate } = require('../services/ai_scorer');
 const { logAccess } = require('../services/dpdp_service');
+
+const router = express.Router();
+const INTERNAL_ROLES = ['recruiter', 'delivery_head'];
+const MAX_FILES = Number(process.env.MAX_BULK_UPLOAD_FILES) || 500;
+const ALLOWED_EXTENSIONS = new Set(['.pdf', '.docx', '.txt']);
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024, files: 500 }
+  limits: { fileSize: 10 * 1024 * 1024, files: MAX_FILES },
+  fileFilter: (req, file, cb) => {
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    if (!ALLOWED_EXTENSIONS.has(extension)) {
+      return cb(new Error('Only PDF, DOCX and TXT files are supported.'));
+    }
+    cb(null, true);
+  }
 });
 
-router.use(authMiddleware);
+function handleUpload(req, res, next) {
+  upload.array('cvFiles', MAX_FILES)(req, res, (error) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError) {
+      if (error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Each CV must be 10 MB or smaller.' });
+      }
+      if (error.code === 'LIMIT_FILE_COUNT') {
+        return res.status(400).json({ error: `Upload no more than ${MAX_FILES} CVs at a time.` });
+      }
+      return res.status(400).json({ error: error.message });
+    }
+    return res.status(400).json({ error: error.message });
+  });
+}
 
-// Get ranked candidates for a requisition
+router.use(authMiddleware);
+router.use(requireRole(INTERNAL_ROLES));
+
+function parseJson(value, fallback) {
+  try {
+    return JSON.parse(value || '');
+  } catch {
+    return fallback;
+  }
+}
+
+function uniqueCandidateId() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const id = `CND-${Math.floor(90000 + Math.random() * 9999)}`;
+    const exists = db.prepare('SELECT 1 FROM candidates WHERE id = ?').get(id);
+    if (!exists) return id;
+  }
+  return `CND-${Date.now().toString().slice(-8)}`;
+}
+
+// Ranked candidates for an internal requisition.
 router.get('/', (req, res) => {
-  const {
-    requisitionId,
-    stage,
-    minScore,
-    search,
-    blindMode = 'false',
-    sortBy = 'overall_score',
-    sortOrder = 'desc'
-  } = req.query;
+  const { requisitionId, stage, minScore, search, blindMode = 'false', sortBy = 'score', sortOrder = 'desc' } = req.query;
 
   if (!requisitionId) {
-    return res.status(400).json({ error: 'requisitionId query parameter is required' });
+    return res.status(400).json({ error: 'A requisition is required.' });
   }
 
-  // Fetch requisition and its scorecard
   const requisition = db.prepare('SELECT * FROM requisitions WHERE id = ?').get(requisitionId);
   if (!requisition) {
-    return res.status(404).json({ error: 'Requisition not found' });
+    return res.status(404).json({ error: 'Requisition not found.' });
   }
 
   let query = `
-    SELECT 
+    SELECT
       c.id, c.name, c.email, c.phone, c.current_role, c.total_exp_years,
       c.key_skills_json, c.current_ctc, c.expected_ctc, c.notice_period_days,
       c.location, c.original_filename, c.consent_status, c.is_deleted,
+      c.created_at as candidate_created_at,
       e.id as evaluation_id, e.overall_score, e.skills_score, e.exp_score,
       e.notice_score, e.ctc_score, e.breakdown_json, e.ai_confidence,
-      e.uncertainty_notes, e.recruiter_verified, e.recruiter_verified_at,
-      e.recruiter_verified_by, e.recruiter_notes, e.pipeline_stage,
-      e.rejection_reason, e.client_feedback_notes, e.interview_slots_json
+      e.uncertainty_notes, e.scoring_engine, e.recruiter_verified,
+      e.recruiter_verified_at, e.recruiter_verified_by, e.recruiter_notes,
+      e.pipeline_stage, e.rejection_reason, e.client_feedback_notes,
+      e.interview_slots_json, e.created_at as evaluated_at, e.updated_at
     FROM cv_evaluations e
     JOIN candidates c ON e.candidate_id = c.id
     WHERE e.requisition_id = ? AND c.is_deleted = 0
@@ -55,118 +94,129 @@ router.get('/', (req, res) => {
   const params = [requisitionId];
 
   if (stage && stage !== 'all') {
-    query += ` AND e.pipeline_stage = ? `;
+    query += ' AND e.pipeline_stage = ?';
     params.push(stage);
   }
 
-  if (minScore) {
-    query += ` AND e.overall_score >= ? `;
-    params.push(parseFloat(minScore));
+  if (minScore !== undefined && minScore !== '') {
+    const parsedMinScore = Number(minScore);
+    if (Number.isFinite(parsedMinScore)) {
+      query += ' AND e.overall_score >= ?';
+      params.push(Math.min(100, Math.max(0, parsedMinScore)));
+    }
   }
 
   if (search && search.trim()) {
-    query += ` AND (c.name LIKE ? OR c.current_role LIKE ? OR c.key_skills_json LIKE ? OR c.id LIKE ?) `;
+    query += ' AND (c.name LIKE ? OR c.current_role LIKE ? OR c.key_skills_json LIKE ? OR c.id LIKE ?)';
     const term = `%${search.trim()}%`;
     params.push(term, term, term, term);
   }
 
-  // Dynamic sorting with safe column names
-  const validSortCols = ['overall_score', 'total_exp_years', 'notice_period_days', 'name', 'created_at'];
-  const sortCol = validSortCols.includes(sortBy) ? sortBy : 'overall_score';
-  const order = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-
-  query += ` ORDER BY e.${sortCol === 'total_exp_years' || sortCol === 'name' ? 'candidate_id' : sortCol} ${order} `;
+  const sortColumns = {
+    score: 'e.overall_score',
+    experience: 'c.total_exp_years',
+    notice: 'c.notice_period_days',
+    name: 'c.name',
+    recent: 'e.updated_at'
+  };
+  const order = String(sortOrder).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  query += ` ORDER BY ${sortColumns[sortBy] || sortColumns.score} ${order}, c.id ASC`;
 
   const rows = db.prepare(query).all(...params);
-
   const isBlind = blindMode === 'true';
 
-  const candidates = rows.map(r => {
-    let displayName = r.name;
-    let displayEmail = r.email;
-    let displayPhone = r.phone;
+  const candidates = rows.map((row) => ({
+    ...row,
+    name: isBlind ? `Candidate ${row.id}` : row.name,
+    email: isBlind ? '[hidden]' : row.email,
+    phone: isBlind ? '[hidden]' : row.phone,
+    key_skills: parseJson(row.key_skills_json, []),
+    breakdown: parseJson(row.breakdown_json, []),
+    interview_slots: row.interview_slots_json ? parseJson(row.interview_slots_json, null) : null
+  }));
 
-    if (isBlind) {
-      displayName = `Candidate ${r.id}`;
-      displayEmail = '[BLIND_SCREENING]';
-      displayPhone = '[BLIND_SCREENING]';
-    }
-
-    return {
-      ...r,
-      name: displayName,
-      email: displayEmail,
-      phone: displayPhone,
-      key_skills: JSON.parse(r.key_skills_json || '[]'),
-      breakdown: JSON.parse(r.breakdown_json || '[]'),
-      interview_slots: r.interview_slots_json ? JSON.parse(r.interview_slots_json) : null
-    };
-  });
-
-  res.json({
-    requisitionId,
-    totalCount: candidates.length,
-    blindMode: isBlind,
-    candidates
-  });
+  res.json({ requisitionId, totalCount: candidates.length, blindMode: isBlind, candidates });
 });
 
-// Get single candidate full profile and log access in DPDP audit trail
+// Full profile for the evidence drawer. Every open is recorded for DPDP audit.
 router.get('/:id', (req, res) => {
   const candidateId = req.params.id;
-  const { requisitionId } = req.query;
+  const requisitionId = req.query.requisitionId || null;
 
-  const candidate = db.prepare('SELECT * FROM candidates WHERE id = ?').get(candidateId);
+  const candidate = db.prepare('SELECT * FROM candidates WHERE id = ? AND is_deleted = 0').get(candidateId);
   if (!candidate) {
-    return res.status(404).json({ error: 'Candidate not found' });
+    return res.status(404).json({ error: 'Candidate not found.' });
   }
 
-  let evaluation = null;
-  if (requisitionId) {
-    evaluation = db.prepare('SELECT * FROM cv_evaluations WHERE candidate_id = ? AND requisition_id = ?').get(candidateId, requisitionId);
-  } else {
-    evaluation = db.prepare('SELECT * FROM cv_evaluations WHERE candidate_id = ? ORDER BY created_at DESC LIMIT 1').get(candidateId);
+  const evaluation = requisitionId
+    ? db.prepare('SELECT * FROM cv_evaluations WHERE candidate_id = ? AND requisition_id = ?').get(candidateId, requisitionId)
+    : db.prepare('SELECT * FROM cv_evaluations WHERE candidate_id = ? ORDER BY created_at DESC LIMIT 1').get(candidateId);
+
+  if (requisitionId && !evaluation) {
+    return res.status(404).json({ error: 'This candidate has not been evaluated for the selected requisition.' });
   }
 
-  // Log unmasked CV view in DPDP compliance log
   logAccess({
     userId: req.user.id,
     userName: req.user.name,
     userRole: req.user.role,
     candidateId,
-    requisitionId: requisitionId || null,
+    requisitionId,
     action: 'view_unmasked_cv',
-    details: {
-      screen: 'CandidateDetailModal',
-      verified_status: evaluation ? evaluation.recruiter_verified : 0
-    }
+    ipAddress: req.ip,
+    details: { screen: 'Candidate detail', requisition_id: requisitionId }
   });
 
   res.json({
     candidate: {
       ...candidate,
-      key_skills: JSON.parse(candidate.key_skills_json || '[]')
+      key_skills: parseJson(candidate.key_skills_json, [])
     },
-    evaluation: evaluation ? {
-      ...evaluation,
-      breakdown: JSON.parse(evaluation.breakdown_json || '[]'),
-      interview_slots: evaluation.interview_slots_json ? JSON.parse(evaluation.interview_slots_json) : null
-    } : null
+    evaluation: evaluation
+      ? {
+          ...evaluation,
+          breakdown: parseJson(evaluation.breakdown_json, []),
+          interview_slots: evaluation.interview_slots_json ? parseJson(evaluation.interview_slots_json, null) : null
+        }
+      : null
   });
 });
 
-// Recruiter opens and verifies CV before submission to client
-router.post('/:id/verify', requireRole(['recruiter', 'delivery_head']), (req, res) => {
+// A recruiter must open the CV before attesting to it.
+router.post('/:id/verify', requireRole(INTERNAL_ROLES), (req, res) => {
   const candidateId = req.params.id;
-  const { requisitionId, notes } = req.body;
+  const { requisitionId, notes = '' } = req.body || {};
 
   if (!requisitionId) {
-    return res.status(400).json({ error: 'requisitionId is required' });
+    return res.status(400).json({ error: 'A requisition is required.' });
+  }
+  if (typeof notes !== 'string' || notes.length > 3000) {
+    return res.status(400).json({ error: 'Notes must be plain text under 3,000 characters.' });
+  }
+
+  const evaluation = db.prepare(`
+    SELECT * FROM cv_evaluations WHERE candidate_id = ? AND requisition_id = ?
+  `).get(candidateId, requisitionId);
+
+  if (!evaluation) {
+    return res.status(404).json({ error: 'Evaluation not found for this candidate and requisition.' });
+  }
+
+  const viewed = db.prepare(`
+    SELECT id FROM access_audit_logs
+    WHERE user_id = ? AND candidate_id = ? AND requisition_id = ? AND action = 'view_unmasked_cv'
+    ORDER BY created_at DESC LIMIT 1
+  `).get(req.user.id, candidateId, requisitionId);
+
+  if (!viewed) {
+    return res.status(400).json({
+      error: 'Open the candidate CV before verifying. The verification is an explicit human review, not a bulk action.'
+    });
   }
 
   db.prepare(`
     UPDATE cv_evaluations
-    SET 
+    SET
       recruiter_verified = 1,
       recruiter_verified_at = CURRENT_TIMESTAMP,
       recruiter_verified_by = ?,
@@ -174,7 +224,7 @@ router.post('/:id/verify', requireRole(['recruiter', 'delivery_head']), (req, re
       pipeline_stage = CASE WHEN pipeline_stage = 'ai_screened' THEN 'recruiter_verified' ELSE pipeline_stage END,
       updated_at = CURRENT_TIMESTAMP
     WHERE candidate_id = ? AND requisition_id = ?
-  `).run(req.user.name, notes || 'Verified candidate resume and credentials', candidateId, requisitionId);
+  `).run(req.user.name, notes.trim() || 'CV reviewed and credentials checked by recruiter.', candidateId, requisitionId);
 
   logAccess({
     userId: req.user.id,
@@ -183,45 +233,42 @@ router.post('/:id/verify', requireRole(['recruiter', 'delivery_head']), (req, re
     candidateId,
     requisitionId,
     action: 'recruiter_verified',
-    details: { notes }
+    ipAddress: req.ip,
+    details: { notes: notes.trim() }
   });
 
-  res.json({
-    success: true,
-    candidateId,
-    recruiter_verified: 1,
-    verifiedBy: req.user.name,
-    message: 'Candidate verified. Eligible for client shortlist submission.'
-  });
+  res.json({ success: true, candidateId, recruiter_verified: 1, verifiedBy: req.user.name });
 });
 
-// Bulk CV Upload and Parsing endpoint
-router.post('/upload', requireRole(['recruiter', 'delivery_head']), upload.array('cvFiles', 500), async (req, res) => {
+// Bulk upload: parse, deduplicate and score in one pass.
+router.post('/upload', handleUpload, async (req, res) => {
   const { requisitionId } = req.body;
+  const files = req.files || [];
+
   if (!requisitionId) {
-    return res.status(400).json({ error: 'requisitionId is required' });
+    return res.status(400).json({ error: 'Select a requisition before uploading CVs.' });
+  }
+  if (files.length === 0) {
+    return res.status(400).json({ error: 'No CV files were received.' });
+  }
+  if (files.reduce((sum, file) => sum + file.size, 0) > 200 * 1024 * 1024) {
+    return res.status(400).json({ error: 'The upload is larger than 200 MB. Please split it into smaller batches.' });
   }
 
   const requisition = db.prepare('SELECT * FROM requisitions WHERE id = ?').get(requisitionId);
   if (!requisition) {
-    return res.status(404).json({ error: 'Requisition not found' });
+    return res.status(404).json({ error: 'Requisition not found.' });
   }
 
-  const scorecard = JSON.parse(requisition.scorecard_json || '{}');
-  const files = req.files || [];
-
-  if (files.length === 0) {
-    return res.status(400).json({ error: 'No CV files received for processing' });
-  }
-
+  const scorecard = parseJson(requisition.scorecard_json, {});
   const results = {
     processed: 0,
-    duplicatesDetected: [],
     successfulCandidates: [],
+    duplicatesDetected: [],
     errors: []
   };
 
-  const insertCand = db.prepare(`
+  const insertCandidate = db.prepare(`
     INSERT INTO candidates (
       id, name, email, phone, current_role, total_exp_years,
       key_skills_json, current_ctc, expected_ctc, notice_period_days,
@@ -231,59 +278,73 @@ router.post('/upload', requireRole(['recruiter', 'delivery_head']), upload.array
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'consented', CURRENT_TIMESTAMP, ?)
   `);
 
-  const insertEval = db.prepare(`
-    INSERT OR REPLACE INTO cv_evaluations (
+  const insertEvaluation = db.prepare(`
+    INSERT INTO cv_evaluations (
       id, requisition_id, candidate_id, overall_score, skills_score, exp_score,
       notice_score, ctc_score, breakdown_json, ai_confidence, uncertainty_notes,
-      recruiter_verified, pipeline_stage
+      scoring_engine, recruiter_verified, pipeline_stage
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ai_screened')
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'ai_screened')
+  `);
+
+  const candidateExistsForReq = db.prepare(`
+    SELECT id FROM cv_evaluations WHERE requisition_id = ? AND candidate_id = ?
   `);
 
   for (const file of files) {
+    const filename = path.basename(file.originalname || 'cv');
     try {
-      // 1. Extract text from PDF, DOCX or TXT
-      const rawText = await extractRawTextFromFile(file.buffer, file.mimetype, file.originalname);
-      const fileHash = calculateFileHash(rawText || file.buffer);
-
-      // 2. Parse candidate structured attributes
-      const parsed = parseResumeDetails(rawText, file.originalname);
-
-      // 3. Check for duplicates
-      const dupCheck = checkDuplicate({ fileHash, email: parsed.email, phone: parsed.phone });
-      if (dupCheck.isDuplicate) {
-        results.duplicatesDetected.push({
-          filename: file.originalname,
-          duplicateType: dupCheck.type,
-          message: dupCheck.message,
-          candidate: dupCheck.candidate
-        });
-        // Still link evaluation to this requisition if not already linked
-        const existingCandId = dupCheck.candidate.id;
-        const evalResult = scoreCandidate({ ...parsed, id: existingCandId, raw_cv_text: rawText }, scorecard, { blindScreening: true });
-        
-        insertEval.run(
-          `eval_${requisitionId}_${existingCandId}`,
-          requisitionId,
-          existingCandId,
-          evalResult.overall_score,
-          evalResult.skills_score,
-          evalResult.exp_score,
-          evalResult.notice_score,
-          evalResult.ctc_score,
-          JSON.stringify(evalResult.breakdown),
-          evalResult.ai_confidence,
-          evalResult.uncertainty_notes
-        );
-
-        results.processed++;
-        continue;
+      const rawText = await extractRawTextFromFile(file.buffer, file.mimetype, filename);
+      if (!rawText || rawText.trim().length < 30) {
+        throw new Error('No readable text found. This may be a scanned PDF; OCR is not enabled in this build.');
       }
 
-      // 4. Create new unique candidate
-      const candId = `CND-${Math.floor(90000 + Math.random() * 9999)}`;
-      insertCand.run(
-        candId,
+      const fileHash = calculateFileHash(rawText);
+      const parsed = parseResumeDetails(rawText, filename);
+      const duplicate = checkDuplicate({ fileHash, email: parsed.email, phone: parsed.phone });
+
+      if (duplicate.isDuplicate) {
+        const existingCandidate = db.prepare('SELECT * FROM candidates WHERE id = ?').get(duplicate.candidate.id);
+
+        if (existingCandidate) {
+          const alreadyInReq = candidateExistsForReq.get(requisitionId, existingCandidate.id);
+
+          if (!alreadyInReq) {
+            const existingProfile = {
+              ...existingCandidate,
+              key_skills: parseJson(existingCandidate.key_skills_json, [])
+            };
+            const evaluation = scoreCandidate(existingProfile, scorecard, { blindScreening: true });
+            insertEvaluation.run(
+              `eval_${requisitionId}_${existingCandidate.id}`,
+              requisitionId,
+              existingCandidate.id,
+              evaluation.overall_score,
+              evaluation.skills_score,
+              evaluation.exp_score,
+              evaluation.notice_score,
+              evaluation.ctc_score,
+              JSON.stringify(evaluation.breakdown),
+              evaluation.ai_confidence,
+              evaluation.uncertainty_notes,
+              evaluation.scoring_engine
+            );
+          }
+
+          results.duplicatesDetected.push({
+            filename,
+            duplicateType: duplicate.type,
+            message: duplicate.message,
+            candidate: { id: existingCandidate.id, name: existingCandidate.name }
+          });
+          results.processed += 1;
+          continue;
+        }
+      }
+
+      const candidateId = uniqueCandidateId();
+      insertCandidate.run(
+        candidateId,
         parsed.name,
         parsed.email,
         parsed.phone,
@@ -295,43 +356,44 @@ router.post('/upload', requireRole(['recruiter', 'delivery_head']), upload.array
         parsed.notice_period_days,
         parsed.location,
         rawText,
-        file.originalname,
+        filename,
         fileHash,
         `Hiring evaluation for ${requisition.client_company} (${requisition.title}) under DPDP Act 2023`
       );
 
-      // 5. Run AI scoring against scorecard
-      const evalResult = scoreCandidate({ ...parsed, id: candId, raw_cv_text: rawText }, scorecard, { blindScreening: true });
+      const evaluation = scoreCandidate(
+        { ...parsed, id: candidateId, raw_cv_text: rawText },
+        scorecard,
+        { blindScreening: true }
+      );
 
-      insertEval.run(
-        `eval_${requisitionId}_${candId}`,
+      insertEvaluation.run(
+        `eval_${requisitionId}_${candidateId}`,
         requisitionId,
-        candId,
-        evalResult.overall_score,
-        evalResult.skills_score,
-        evalResult.exp_score,
-        evalResult.notice_score,
-        evalResult.ctc_score,
-        JSON.stringify(evalResult.breakdown),
-        evalResult.ai_confidence,
-        evalResult.uncertainty_notes
+        candidateId,
+        evaluation.overall_score,
+        evaluation.skills_score,
+        evaluation.exp_score,
+        evaluation.notice_score,
+        evaluation.ctc_score,
+        JSON.stringify(evaluation.breakdown),
+        evaluation.ai_confidence,
+        evaluation.uncertainty_notes,
+        evaluation.scoring_engine
       );
 
       results.successfulCandidates.push({
-        candidateId: candId,
+        candidateId,
         name: parsed.name,
-        filename: file.originalname,
-        score: evalResult.overall_score,
-        confidence: evalResult.ai_confidence
+        filename,
+        score: evaluation.overall_score,
+        confidence: evaluation.ai_confidence,
+        noticePeriodDays: parsed.notice_period_days,
+        warnings: parsed.parse_warnings
       });
-
-      results.processed++;
-    } catch (err) {
-      console.error(`Error processing file ${file.originalname}:`, err);
-      results.errors.push({
-        filename: file.originalname,
-        error: err.message
-      });
+      results.processed += 1;
+    } catch (error) {
+      results.errors.push({ filename, error: error.message });
     }
   }
 
@@ -341,6 +403,7 @@ router.post('/upload', requireRole(['recruiter', 'delivery_head']), upload.array
     userRole: req.user.role,
     requisitionId,
     action: 'bulk_cv_upload',
+    ipAddress: req.ip,
     details: {
       total_files: files.length,
       successful: results.successfulCandidates.length,
@@ -349,11 +412,7 @@ router.post('/upload', requireRole(['recruiter', 'delivery_head']), upload.array
     }
   });
 
-  res.json({
-    success: true,
-    requisitionId,
-    results
-  });
+  res.json({ success: true, requisitionId, results });
 });
 
 module.exports = router;

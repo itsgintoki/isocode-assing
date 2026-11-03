@@ -2,21 +2,33 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dataDir = path.join(__dirname, '../../data');
+const projectRoot = path.join(__dirname, '../..');
+const configuredPath = process.env.DATABASE_PATH
+  ? path.resolve(projectRoot, process.env.DATABASE_PATH)
+  : path.join(projectRoot, 'data/screening.db');
+
+const dataDir = path.dirname(configuredPath);
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const dbPath = path.join(dataDir, 'screening.db');
-const db = new Database(dbPath);
-
-// Enable foreign keys and WAL mode for high concurrency
+const db = new Database(configuredPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+db.pragma('busy_timeout = 5000');
+
+function hasColumn(table, column) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
+}
+
+function addColumnIfMissing(table, column, definition) {
+  if (!hasColumn(table, column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
 
 function initSchema() {
   db.exec(`
-    -- Users table with role-based access control
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
@@ -24,10 +36,18 @@ function initSchema() {
       role TEXT NOT NULL CHECK(role IN ('recruiter', 'client_hiring_manager', 'delivery_head')),
       company_id TEXT NOT NULL,
       company_name TEXT NOT NULL,
+      password_hash TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Requisitions table
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS requisitions (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -39,7 +59,7 @@ function initSchema() {
       openings_count INTEGER DEFAULT 1,
       min_exp REAL DEFAULT 0,
       max_exp REAL DEFAULT 15,
-      max_ctc REAL DEFAULT 30, -- In Lakhs INR
+      max_ctc REAL DEFAULT 30,
       max_notice_days INTEGER DEFAULT 60,
       location TEXT DEFAULT 'Noida',
       raw_jd TEXT,
@@ -50,18 +70,17 @@ function initSchema() {
       FOREIGN KEY (client_user_id) REFERENCES users(id)
     );
 
-    -- Candidates table (DPDP protected personal data)
     CREATE TABLE IF NOT EXISTS candidates (
-      id TEXT PRIMARY KEY, -- e.g. CND-91022
+      id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       phone TEXT NOT NULL,
       current_role TEXT NOT NULL,
       total_exp_years REAL NOT NULL,
-      key_skills_json TEXT NOT NULL, -- JSON array of skills
-      current_ctc REAL, -- In LPA
-      expected_ctc REAL, -- In LPA
-      notice_period_days INTEGER NOT NULL,
+      key_skills_json TEXT NOT NULL,
+      current_ctc REAL,
+      expected_ctc REAL,
+      notice_period_days INTEGER,
       location TEXT,
       raw_cv_text TEXT,
       original_filename TEXT,
@@ -74,19 +93,19 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Evaluations & Pipeline table
     CREATE TABLE IF NOT EXISTS cv_evaluations (
       id TEXT PRIMARY KEY,
       requisition_id TEXT NOT NULL,
       candidate_id TEXT NOT NULL,
-      overall_score REAL NOT NULL, -- 0-100
+      overall_score REAL NOT NULL,
       skills_score REAL NOT NULL,
       exp_score REAL NOT NULL,
       notice_score REAL NOT NULL,
       ctc_score REAL NOT NULL,
-      breakdown_json TEXT NOT NULL, -- JSON array of criterion details with quotes & confidence
+      breakdown_json TEXT NOT NULL,
       ai_confidence TEXT NOT NULL CHECK(ai_confidence IN ('high', 'medium', 'low')),
       uncertainty_notes TEXT,
+      scoring_engine TEXT DEFAULT 'Local evidence matcher',
       recruiter_verified INTEGER DEFAULT 0,
       recruiter_verified_at DATETIME,
       recruiter_verified_by TEXT,
@@ -106,7 +125,7 @@ function initSchema() {
       rejection_notes TEXT,
       client_feedback_notes TEXT,
       client_action_at DATETIME,
-      interview_slots_json TEXT, -- Suggested slots from client
+      interview_slots_json TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (requisition_id) REFERENCES requisitions(id),
@@ -114,7 +133,6 @@ function initSchema() {
       UNIQUE(requisition_id, candidate_id)
     );
 
-    -- DPDP Act 2023 Access & Activity Audit Log
     CREATE TABLE IF NOT EXISTS access_audit_logs (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -122,13 +140,12 @@ function initSchema() {
       user_role TEXT NOT NULL,
       candidate_id TEXT,
       requisition_id TEXT,
-      action TEXT NOT NULL, -- 'view_unmasked_cv', 'view_masked_card', 'export_shortlist', 'stage_change', 'candidate_deletion', 'scorecard_updated'
+      action TEXT NOT NULL,
       ip_address TEXT DEFAULT '127.0.0.1',
       details_json TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Weekly AI vs Recruiter Calibration Audit for Delivery Head
     CREATE TABLE IF NOT EXISTS calibration_audits (
       id TEXT PRIMARY KEY,
       week_label TEXT NOT NULL,
@@ -144,31 +161,26 @@ function initSchema() {
       FOREIGN KEY (requisition_id) REFERENCES requisitions(id),
       FOREIGN KEY (candidate_id) REFERENCES candidates(id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_evaluations_requisition ON cv_evaluations(requisition_id, overall_score DESC);
+    CREATE INDEX IF NOT EXISTS idx_evaluations_candidate ON cv_evaluations(candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_candidates_email ON candidates(LOWER(email));
+    CREATE INDEX IF NOT EXISTS idx_candidates_hash ON candidates(file_hash);
+    CREATE INDEX IF NOT EXISTS idx_audit_candidate ON access_audit_logs(candidate_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_user ON access_audit_logs(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
   `);
 
-  console.log('Database schema initialized at:', dbPath);
+  // Small, forward-only migrations for databases created by the earlier build.
+  addColumnIfMissing('users', 'password_hash', 'TEXT');
+  addColumnIfMissing('cv_evaluations', 'scoring_engine', "TEXT DEFAULT 'Local evidence matcher'");
+
+  console.log(`Database ready: ${configuredPath}`);
 }
 
 initSchema();
 
-// Optional PostgreSQL Production Pool Support
-const { Pool } = require('pg');
-let pgPool = null;
-const isPostgresEnabled = Boolean(process.env.DATABASE_URL || process.env.POSTGRES_HOST || process.env.DB_TYPE === 'postgres');
-
-if (isPostgresEnabled) {
-  try {
-    const connStr = process.env.DATABASE_URL || 
-      `postgres://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'postgrespassword'}@${process.env.POSTGRES_HOST || 'localhost'}:${process.env.POSTGRES_PORT || 5432}/${process.env.POSTGRES_DB || 'companya_screening'}`;
-    pgPool = new Pool({ connectionString: connStr });
-    console.log('PostgreSQL connection pool enabled for production environment.');
-  } catch (err) {
-    console.warn('PostgreSQL pool connection notice: Using embedded SQLite fallback for local reviewer execution.');
-  }
-}
-
-db.pgPool = pgPool;
-db.isPostgres = isPostgresEnabled;
-db.getEngine = () => (isPostgresEnabled && pgPool ? 'PostgreSQL' : 'SQLite (Embedded WAL)');
+db.databasePath = configuredPath;
+db.getEngine = () => 'SQLite (WAL)';
 
 module.exports = db;
