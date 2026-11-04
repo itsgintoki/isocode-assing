@@ -1,12 +1,12 @@
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const db = require('../db/database');
-const { authMiddleware, requireRole } = require('../middleware/auth');
-const { extractRawTextFromFile, parseResumeDetails } = require('../services/cv_parser');
-const { checkDuplicate, calculateFileHash } = require('../services/duplicate_detector');
-const { scoreCandidate } = require('../services/ai_scorer');
-const { logAccess } = require('../services/dpdp_service');
+import express from 'express';
+import multer from 'multer';
+import path from 'node:path';
+import db from '../db/database';
+import { authMiddleware, requireRole } from '../middleware/auth';
+import { extractRawTextFromFile, parseResumeDetails } from '../services/cv_parser';
+import { checkDuplicate, calculateFileHash } from '../services/duplicate_detector';
+import { scoreCandidate } from '../services/ai_scorer';
+import { logAccess } from '../services/dpdp_service';
 
 const router = express.Router();
 const INTERNAL_ROLES = ['recruiter', 'delivery_head'];
@@ -63,7 +63,15 @@ function uniqueCandidateId() {
 
 // Ranked candidates for an internal requisition.
 router.get('/', (req, res) => {
-  const { requisitionId, stage, minScore, search, blindMode = 'false', sortBy = 'score', sortOrder = 'desc' } = req.query;
+  const {
+    requisitionId,
+    stage,
+    minScore,
+    search,
+    blindMode = 'false',
+    sortBy = 'score',
+    sortOrder = 'desc'
+  } = req.query as Record<string, string | undefined>;
 
   if (!requisitionId) {
     return res.status(400).json({ error: 'A requisition is required.' });
@@ -91,7 +99,7 @@ router.get('/', (req, res) => {
     WHERE e.requisition_id = ? AND c.is_deleted = 0
   `;
 
-  const params = [requisitionId];
+  const params: Array<string | number> = [requisitionId];
 
   if (stage && stage !== 'all') {
     query += ' AND e.pipeline_stage = ?';
@@ -243,7 +251,7 @@ router.post('/:id/verify', requireRole(INTERNAL_ROLES), (req, res) => {
 // Bulk upload: parse, deduplicate and score in one pass.
 router.post('/upload', handleUpload, async (req, res) => {
   const { requisitionId } = req.body;
-  const files = req.files || [];
+  const files: Express.Multer.File[] = Array.isArray(req.files) ? req.files : [];
 
   if (!requisitionId) {
     return res.status(400).json({ error: 'Select a requisition before uploading CVs.' });
@@ -415,4 +423,4 @@ router.post('/upload', handleUpload, async (req, res) => {
   res.json({ success: true, requisitionId, results });
 });
 
-module.exports = router;
+export default router;

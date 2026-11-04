@@ -1,6 +1,6 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+import Database from 'better-sqlite3';
+import path from 'node:path';
+import fs from 'node:fs';
 
 const projectRoot = path.join(__dirname, '../..');
 const configuredPath = process.env.DATABASE_PATH
@@ -12,7 +12,24 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const db = new Database(configuredPath);
+export interface SqlStatement {
+  get(...params: any[]): any;
+  all(...params: any[]): any[];
+  run(...params: any[]): Database.RunResult;
+  pluck(toggleState?: boolean): SqlStatement;
+  expand(toggleState?: boolean): SqlStatement;
+  raw(toggleState?: boolean): SqlStatement;
+  safeIntegers(toggleState?: boolean): SqlStatement;
+  bind(...params: any[]): SqlStatement;
+}
+
+export interface ShortlistDatabase extends Omit<Database.Database, 'prepare'> {
+  prepare(source: string): SqlStatement;
+  databasePath: string;
+  getEngine(): string;
+}
+
+const db = new Database(configuredPath) as unknown as ShortlistDatabase;
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
@@ -183,4 +200,4 @@ initSchema();
 db.databasePath = configuredPath;
 db.getEngine = () => 'SQLite (WAL)';
 
-module.exports = db;
+export default db;

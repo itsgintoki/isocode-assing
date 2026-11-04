@@ -1,15 +1,18 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "Shortlist API — SQLite-backed screening service",
-  "main": "index.js",
+  "description": "Shortlist API — TypeScript, Express and SQLite screening service",
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node src/server.js",
-    "test": "node --test tests/all_tests.js"
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "seed": "tsx src/db/seed.ts",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "tsx --test tests/all_tests.ts"
   },
   "keywords": [],
-  "author": "",
+  "author": "Ankit Sinha",
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^13.0.3",
@@ -18,8 +21,7 @@
     "express": "^5.3.0",
     "mammoth": "^1.13.0",
     "multer": "^2.5.0",
-    "pdf-parse": "^2.4.5",
-    "uuid": "^14.0.3"
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
@@ -27,7 +29,9 @@
     "@types/express": "^5.0.6",
     "@types/multer": "^2.3.0",
     "@types/node": "^26.6.6",
-    "@types/uuid": "^11.0.0",
-    "supertest": "^7.3.1"
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }

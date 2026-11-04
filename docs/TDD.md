@@ -45,22 +45,22 @@ This TDD explains the implementation that exists in the repository. Where the br
 
 | Brief requirement | Implementation | Evidence |
 | --- | --- | --- |
-| JD scorecard | Pasted JD is converted into an editable scorecard: experience band, notice limit, CTC cap, location, must-have skills and weights. Optional LLM extraction with a deterministic fallback. | `backend/src/services/ai_scorer.js`, `ScorecardPage.tsx` |
-| Bulk CV upload and parsing | Multi-file PDF/DOCX/TXT upload, text extraction, profile parsing, duplicate detection and scoring. | `POST /api/candidates/upload`, `cv_parser.js`, `duplicate_detector.js` |
+| JD scorecard | Pasted JD is converted into an editable scorecard: experience band, notice limit, CTC cap, location, must-have skills and weights. Optional LLM extraction with a deterministic fallback. | `backend/src/services/ai_scorer.ts`, `ScorecardPage.tsx` |
+| Bulk CV upload and parsing | Multi-file PDF/DOCX/TXT upload, text extraction, profile parsing, duplicate detection and scoring. | `POST /api/candidates/upload`, `cv_parser.ts`, `duplicate_detector.ts` |
 | Ranked list with evidence | Every candidate has an overall score and criterion scores. Matched criteria include a verbatim quote and line number; missing evidence is called out, and each candidate carries a confidence level. | `GET /api/candidates`, `CandidateDrawer.tsx` |
-| Client shortlist portal | Client-only portal, scoped to the client company, showing submitted candidates with masked contacts and no raw CV. | `client.js`, `ClientShortlistPage.tsx` |
-| Pipeline | Internal stages plus client-driven stages, with the verification gate before submission. | `pipeline.js`, `PipelinePage.tsx` |
-| Sign-in and roles | Real login with scrypt password hashes and HttpOnly session cookies. Three roles: recruiter, client hiring manager, delivery head. | `auth_service.js`, `auth.js`, `middleware/auth.js` |
-| Database | SQLite with WAL mode, schema creation on boot and demo seeding when empty. | `database.js`, `seed.js` |
+| Client shortlist portal | Client-only portal, scoped to the client company, showing submitted candidates with masked contacts and no raw CV. | `client.ts`, `ClientShortlistPage.tsx` |
+| Pipeline | Internal stages plus client-driven stages, with the verification gate before submission. | `pipeline.ts`, `PipelinePage.tsx` |
+| Sign-in and roles | Real login with scrypt password hashes and HttpOnly session cookies. Three roles: recruiter, client hiring manager, delivery head. | `auth_service.ts`, `auth.ts`, `middleware/auth.ts` |
+| Database | SQLite with WAL mode, schema creation on boot and demo seeding when empty. | `database.ts`, `seed.ts` |
 | Frontend and backend | React 19 + Vite 8 frontend; Express 5 API. | `frontend/`, `backend/` |
-| AI with uncertainty handling | Deterministic evidence matcher flags missing notice, missing CTC, below-band experience and missing skills. Confidence is high/medium/low. | `ai_scorer.js` |
+| AI with uncertainty handling | Deterministic evidence matcher flags missing notice, missing CTC, below-band experience and missing skills. Confidence is high/medium/low. | `ai_scorer.ts` |
 | No auto-rejection | Nothing is removed or rejected by the scorer. Low scores remain searchable; rejection is a human or client action. | scorer output, pipeline routes |
 | Recruiter must open CV first | Verification requires an existing `view_unmasked_cv` audit entry for that user, candidate and requisition. | `POST /api/candidates/:id/verify` |
-| Masked client contacts | Client response masks name, email and phone; it does not include `raw_cv_text`. | `pii_masker.js`, `client.js` |
-| DPDP consent/deletion/audit | Consent fields per candidate, append-style audit log, right-to-erasure workflow with receipt. | `dpdp_service.js`, `dpdp.js`, `CompliancePage.tsx` |
+| Masked client contacts | Client response masks name, email and phone; it does not include `raw_cv_text`. | `pii_masker.ts`, `client.ts` |
+| DPDP consent/deletion/audit | Consent fields per candidate, append-style audit log, right-to-erasure workflow with receipt. | `dpdp_service.ts`, `dpdp.ts`, `CompliancePage.tsx` |
 | Mobile-polished UI | Responsive layout with mobile drawer, stacked cards, mobile filters and client portal layouts. | `index.css`, screenshots captured during verification |
 | Loading/empty/error states | Skeleton loaders, empty states, inline errors and toast notifications. | `common.tsx`, page components |
-| Tests | 25 automated backend tests covering services, auth, tenancy, verification, upload and erasure. | `backend/tests/all_tests.js` |
+| Tests | 26 automated backend tests covering services, auth, tenancy, verification, upload, PDF parsing and erasure. | `backend/tests/all_tests.ts` |
 | No secrets | `.env.example` contains template values only; real keys and `.env` files are ignored. | `.gitignore`, `.env.example` |
 
 ---
@@ -106,11 +106,11 @@ In development, Vite runs on port 5173 and proxies `/api` to the API on port 400
 | --- | --- | --- |
 | Frontend | React 19, TypeScript, Vite 8 | Fast feedback, typed domain objects, simple SPA routing |
 | Styling | Custom CSS design system | Small dependency surface, full control of responsive behaviour |
-| API | Node.js 22, Express 5 | Familiar HTTP model, straightforward middleware and file upload handling |
+| API | Node.js 22, TypeScript 7, Express 5 | Typed server code, familiar HTTP model and straightforward file upload handling |
 | Database | SQLite via `better-sqlite3`, WAL | Zero-setup reviewer experience and transactional local writes |
 | Auth | `scrypt` password hashes, random session tokens | No plaintext passwords, no spoofable user-id headers |
 | Parsing | `pdf-parse`, `mammoth` | Server-side text extraction without writing uploaded files to disk |
-| Tests | Node test runner + Supertest | No test framework dependency beyond the API client |
+| Tests | Node test runner + Supertest, run through `tsx` | No additional test framework; tests are TypeScript too |
 | Packaging | Dockerfile + compose | One-command review environment with a persistent SQLite volume |
 
 ### 4.3 Why SQLite only
@@ -123,7 +123,7 @@ The trade-off is real: SQLite is not the right choice for many concurrent API in
 
 ## 5. Data model
 
-The schema is defined in `backend/src/db/database.js`. The main tables are:
+The schema is defined in `backend/src/db/database.ts`. The main tables are:
 
 ### `users`
 
@@ -356,7 +356,7 @@ These limitations are surfaced in the UI and in the README rather than hidden be
 
 ## 9. Client masking
 
-`pii_masker.js` transforms a candidate for the client portal:
+`pii_masker.ts` transforms a candidate for the client portal:
 
 - Name: first name plus initial, e.g. `Ritika B.`
 - Email: first character plus `***` plus domain, e.g. `r***2@gmail.com`
@@ -540,15 +540,15 @@ npm test
 Result on the final build:
 
 ```
-1..25
-# tests 25
-# pass 25
+1..26
+# tests 26
+# pass 26
 # fail 0
 ```
 
 Coverage areas:
 
-- CV parser: contacts, experience, notice, CTC, missing values, immediate joiners, no fake contacts.
+- CV parser: PDF text-layer extraction, contacts, experience, notice, CTC, missing values, immediate joiners, no fake contacts.
 - Scorer: verbatim evidence, missing notice/CTC uncertainty, JD extraction, blind screening.
 - PII masking for the client portal.
 - Duplicate detection by hash and contact details.
@@ -578,11 +578,11 @@ The suite uses `data/test-screening.db` and deletes it before and after the run.
 - Shortlisted, passed and proposed slots from the client portal.
 - Erased a candidate and confirmed the receipt and audit entry.
 - Captured desktop and mobile screenshots of all main screens.
-- Checked that the production build succeeds and TypeScript reports no errors.
+- Checked that the backend and frontend production builds succeed and both TypeScript projects report no errors.
 
 ### 14.3 What is not tested
 
-- Real PDF/DOCX files with complex layouts.
+- Complex PDF/DOCX layouts (a generated PDF fixture covers the text-extraction path).
 - OCR or image-only PDFs.
 - Load, concurrency or multi-instance behaviour.
 - Browser accessibility audit with a screen reader.

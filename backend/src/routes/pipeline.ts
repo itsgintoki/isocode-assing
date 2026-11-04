@@ -1,7 +1,7 @@
-const express = require('express');
-const db = require('../db/database');
-const { authMiddleware, requireRole } = require('../middleware/auth');
-const { logAccess } = require('../services/dpdp_service');
+import express from 'express';
+import db from '../db/database';
+import { authMiddleware, requireRole } from '../middleware/auth';
+import { logAccess } from '../services/dpdp_service';
 
 const router = express.Router();
 const INTERNAL_ROLES = ['recruiter', 'delivery_head'];
@@ -189,4 +189,4 @@ router.post('/batch-submit', requireRole(INTERNAL_ROLES), (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;

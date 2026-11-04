@@ -10,16 +10,18 @@ RUN apt-get update \
 COPY package*.json ./
 COPY backend/package*.json ./backend/
 COPY frontend/package*.json ./frontend/
-RUN npm ci --omit=dev \
-  && npm --prefix backend ci --omit=dev \
+RUN npm ci \
+  && npm --prefix backend ci \
   && npm --prefix frontend ci
 
 COPY . .
-RUN npm run build
+RUN npm run build \
+  && npm --prefix backend prune --omit=dev \
+  && rm -rf frontend/node_modules node_modules
 
 ENV NODE_ENV=production
 ENV PORT=4000
 ENV DATABASE_PATH=./data/screening.db
 
 EXPOSE 4000
-CMD ["node", "backend/src/server.js"]
+CMD ["node", "backend/dist/server.js"]

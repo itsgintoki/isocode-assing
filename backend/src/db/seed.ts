@@ -1,8 +1,21 @@
-const db = require('./database');
-const { scoreCandidate, extractScorecardFromJD } = require('../services/ai_scorer');
-const { calculateFileHash } = require('../services/duplicate_detector');
-const { logAccess } = require('../services/dpdp_service');
-const { hashPassword, DEMO_PASSWORD } = require('../services/auth_service');
+import db from './database';
+import { scoreCandidate, extractScorecardFromJD } from '../services/ai_scorer';
+import { calculateFileHash } from '../services/duplicate_detector';
+import { logAccess } from '../services/dpdp_service';
+import { hashPassword, DEMO_PASSWORD } from '../services/auth_service';
+
+interface SeedEvaluationState {
+  stage?: string;
+  verified?: boolean;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  recruiterNotes?: string;
+  rejectionReason?: string;
+  rejectionNotes?: string;
+  clientFeedback?: string;
+  clientActionAt?: string;
+  interviewSlots?: Array<{ date: string; time: string; round: string; interviewer?: string }>;
+}
 
 function seedDatabase() {
   const runSeed = db.transaction(() => {
@@ -498,7 +511,12 @@ Current CTC: ₹9.0 LPA | Expected CTC: ₹12.0 LPA`
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    function addEvaluation(requisitionId, candidate, scorecard, state = {}) {
+    function addEvaluation(
+      requisitionId: string,
+      candidate: any,
+      scorecard: any,
+      state: SeedEvaluationState = {}
+    ) {
       const scoringInput = {
         id: candidate.id,
         name: candidate.name,
@@ -624,7 +642,9 @@ Current CTC: ₹9.0 LPA | Expected CTC: ₹12.0 LPA`
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const calibrationSamples = [
+    const calibrationSamples: Array<
+      [string, string, string, string, number, number, string, string, string]
+    > = [
       ['cal_w42_01', 'Week 42 (12–18 Oct)', 'REQ-2026-081', 'CND-91120', 1, 1, 'aligned', 'Full agreement. Strong Kafka and payments depth, with 15-day availability.', '2026-10-19 11:00:00'],
       ['cal_w42_02', 'Week 42 (12–18 Oct)', 'REQ-2026-081', 'CND-91022', 2, 2, 'aligned', 'Full agreement. Verified for the HDFC Tech platform.', '2026-10-19 11:15:00'],
       ['cal_w43_01', 'Week 43 (19–25 Oct)', 'REQ-2026-081', 'CND-91105', 4, 6, 'major_override', 'Recruiter downranked the candidate: ₹38 LPA expectation is well above the budget.', '2026-10-26 14:00:00'],
@@ -690,4 +710,4 @@ if (require.main === module) {
   seedDatabase();
 }
 
-module.exports = { seedDatabase, ensureSeeded };
+export { seedDatabase, ensureSeeded };

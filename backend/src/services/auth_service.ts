@@ -1,5 +1,5 @@
-const crypto = require('crypto');
-const db = require('../db/database');
+import crypto from 'node:crypto';
+import db from '../db/database';
 
 const SESSION_COOKIE = 'shortlist_session';
 const SESSION_DAYS = 7;
@@ -96,7 +96,7 @@ function clearSessionCookie(res) {
   });
 }
 
-module.exports = {
+export {
   SESSION_COOKIE,
   DEMO_PASSWORD,
   hashPassword,

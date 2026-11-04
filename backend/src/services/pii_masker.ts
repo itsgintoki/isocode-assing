@@ -54,7 +54,7 @@ function maskCandidateForClient(candidate) {
   };
 }
 
-module.exports = {
+export {
   maskEmail,
   maskPhone,
   maskCandidateForClient

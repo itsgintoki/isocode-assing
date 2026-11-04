@@ -12,7 +12,7 @@ All seeded candidates, clients, CVs and contact details are fictional.
 
 | Requirement | Notes |
 | --- | --- |
-| Node.js 22+ | The backend uses `better-sqlite3`; the PDF generator uses Node 22's built-in WebSocket client. |
+| Node.js 22+ | The backend is TypeScript compiled with `tsc`, uses `better-sqlite3`, and the PDF generator uses Node 22's built-in WebSocket client. |
 | npm 9+ | Tested with npm 9. |
 | Google Chrome or Chromium | Only needed to rebuild `docs/TDD.pdf` and `submission.zip`. Set `CHROME_BIN` if it is not on `PATH`. |
 | Linux, macOS or Windows | Docker is the simplest path on Windows. |
@@ -50,7 +50,7 @@ Edit `.env` at the repository root. The backend loads it on startup. Relative `D
 npm test
 ```
 
-Expected result: **25 tests, 25 passing**. The suite creates and removes `backend/data/test-screening.db`; it never writes to the demo database.
+Expected result: **26 tests, 26 passing**. The suite creates and removes `backend/data/test-screening.db`; it never writes to the demo database.
 
 ### 2.4 Start
 
@@ -118,7 +118,7 @@ npm run build
 NODE_ENV=production npm start
 ```
 
-The Express server serves the built SPA from `frontend/dist` and the API from `/api` on port `4000`.
+`npm run build` compiles the backend TypeScript to `backend/dist` and the frontend to `frontend/dist`. The Express server then serves the built SPA and the API on port `4000`.
 
 **HTTPS is required when `NODE_ENV=production`.** The session cookie is marked `Secure`, so it will not be stored over plain HTTP. Put the app behind a TLS-terminating reverse proxy (for example Caddy, nginx with Let's Encrypt, or a platform load balancer). The app sets `trust proxy` so client IPs are read from the forwarded headers.
 
@@ -152,7 +152,7 @@ The compose file mounts the named volume `app_data` at `/app/backend/data`, so t
 docker compose down -v
 ```
 
-The container uses `NODE_ENV=production`, so put a TLS proxy in front of it for non-local use. The image builds the frontend and installs backend runtime dependencies; it is a single-container deployment, not a horizontally scaled service.
+The container uses `NODE_ENV=production`, so put a TLS proxy in front of it for non-local use. The image compiles the TypeScript backend, builds the frontend, then prunes development dependencies; it is a single-container deployment, not a horizontally scaled service.
 
 ---
 
@@ -236,8 +236,8 @@ Run this before handing the build to a reviewer:
 
 ```bash
 npm test
+npm run typecheck
 npm run build
-cd frontend && npx tsc --noEmit && cd ..
 npm run tdd:pdf
 npm run package-zip
 unzip -l submission.zip
@@ -279,7 +279,7 @@ Install Chrome/Chromium or point `CHROME_BIN` at the executable.
 The client portal only shows candidates that a recruiter has verified and submitted. Use the recruiter account to move a candidate to `submitted_to_client` first.
 
 **Client sees another client's requisition**
-That is a bug. The tenant guard should reject it with 403. Capture the request and check `client_company` scoping in `backend/src/middleware/auth.js` and `backend/src/routes/client.js`; do not rely on the UI to hide the record.
+That is a bug. The tenant guard should reject it with 403. Capture the request and check `client_company` scoping in `backend/src/middleware/auth.ts` and `backend/src/routes/client.ts`; do not rely on the UI to hide the record.
 
 ---
 

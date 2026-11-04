@@ -1,8 +1,8 @@
-const express = require('express');
-const db = require('../db/database');
-const { authMiddleware, requireRole, canClientAccessRequisition } = require('../middleware/auth');
-const { extractScorecardFromJD, extractScorecardWithAI, scoreCandidate } = require('../services/ai_scorer');
-const { logAccess } = require('../services/dpdp_service');
+import express from 'express';
+import db from '../db/database';
+import { authMiddleware, requireRole, canClientAccessRequisition } from '../middleware/auth';
+import { extractScorecardFromJD, extractScorecardWithAI, scoreCandidate } from '../services/ai_scorer';
+import { logAccess } from '../services/dpdp_service';
 
 const router = express.Router();
 const INTERNAL_ROLES = ['recruiter', 'delivery_head'];
@@ -313,4 +313,4 @@ router.put('/:id/scorecard', requireRole(INTERNAL_ROLES), (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;

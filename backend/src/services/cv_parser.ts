@@ -1,6 +1,20 @@
-const pdfParse = require('pdf-parse');
-const mammoth = require('mammoth');
-const { calculateFileHash } = require('./duplicate_detector');
+import { PDFParse } from 'pdf-parse';
+import mammoth from 'mammoth';
+
+export interface ParsedResume {
+  name: string;
+  email: string;
+  phone: string;
+  current_role: string;
+  total_exp_years: number;
+  key_skills: string[];
+  current_ctc: number | null;
+  expected_ctc: number | null;
+  notice_period_days: number | null;
+  location: string | null;
+  raw_cv_text: string;
+  parse_warnings: string[];
+}
 
 // Standard skills taxonomy across IT, Banking, and Retail
 const SKILLS_TAXONOMY = [
@@ -13,13 +27,24 @@ const SKILLS_TAXONOMY = [
   'Vendor Management', 'Loss Prevention', 'P&L Management', 'Team Leadership'
 ];
 
-async function extractRawTextFromFile(buffer, mimeType, filename = '') {
-  const ext = filename.split('.').pop().toLowerCase();
+async function extractRawTextFromFile(
+  buffer: Buffer,
+  mimeType: string,
+  filename = ''
+): Promise<string> {
+  const ext = (filename.split('.').pop() || '').toLowerCase();
 
   try {
     if (mimeType === 'application/pdf' || ext === 'pdf') {
-      const data = await pdfParse(buffer);
-      return data.text || '';
+      // pdf-parse v2 exposes a PDFParse class rather than a callable default.
+      // Always destroy the parser so worker resources are released.
+      const parser = new PDFParse({ data: new Uint8Array(buffer) });
+      try {
+        const data = await parser.getText();
+        return data.text || '';
+      } finally {
+        await parser.destroy();
+      }
     } else if (
       mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
       ext === 'docx'
@@ -37,7 +62,7 @@ async function extractRawTextFromFile(buffer, mimeType, filename = '') {
   }
 }
 
-function parseResumeDetails(rawText, filename = '') {
+function parseResumeDetails(rawText: string, filename = ''): ParsedResume {
   const text = (rawText || '').trim();
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const warnings = [];
@@ -186,7 +211,7 @@ function parseResumeDetails(rawText, filename = '') {
   };
 }
 
-module.exports = {
+export {
   extractRawTextFromFile,
   parseResumeDetails,
   SKILLS_TAXONOMY

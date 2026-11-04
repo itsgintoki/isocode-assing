@@ -1,29 +1,22 @@
-const test = require('node:test');
-const { after } = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const path = require('node:path');
+import test, { after } from 'node:test';
+import assert from 'node:assert';
+import fs from 'node:fs';
 
-// Use a disposable database so the suite never touches the demo data.
-process.env.NODE_ENV = 'test';
-process.env.DATABASE_PATH = 'data/test-screening.db';
-const testDatabasePath = path.join(__dirname, '../data/test-screening.db');
-for (const suffix of ['', '-wal', '-shm']) {
-  fs.rmSync(`${testDatabasePath}${suffix}`, { force: true });
-}
+// Keep this import first: it selects the disposable database before the API loads.
+import { testDatabasePath } from './setup';
 
-const request = require('supertest');
-const app = require('../src/server');
-const db = require('../src/db/database');
-const {
+import request from 'supertest';
+import app from '../src/server';
+import db from '../src/db/database';
+import {
   scoreCandidate,
   extractScorecardFromJD,
   sanitizeForBlindScoring,
   findEvidenceInText
-} = require('../src/services/ai_scorer');
-const { parseResumeDetails } = require('../src/services/cv_parser');
-const { calculateFileHash, checkDuplicate } = require('../src/services/duplicate_detector');
-const { maskEmail, maskPhone, maskCandidateForClient } = require('../src/services/pii_masker');
+} from '../src/services/ai_scorer';
+import { extractRawTextFromFile, parseResumeDetails } from '../src/services/cv_parser';
+import { calculateFileHash, checkDuplicate } from '../src/services/duplicate_detector';
+import { maskEmail, maskPhone, maskCandidateForClient } from '../src/services/pii_masker';
 
 const PASSWORD = 'demo1234';
 
@@ -44,6 +37,37 @@ after(() => {
 // ---------------------------------------------------------------------------
 // Services
 // ---------------------------------------------------------------------------
+
+function buildMinimalPdf(text: string): Buffer {
+  const escaped = text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const stream = `BT\n/F1 14 Tf\n72 720 Td\n(${escaped}) Tj\nET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(body));
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(body);
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.forEach((offset) => {
+    body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(body, 'latin1');
+}
+
+test('CV parser - extracts the text layer from a PDF buffer', async () => {
+  const pdf = buildMinimalPdf('Test Candidate PDF extraction works');
+  const text = await extractRawTextFromFile(pdf, 'application/pdf', 'test.pdf');
+  assert.match(text, /Test Candidate PDF extraction works/);
+});
 
 test('CV parser - extracts contact details, experience, notice and CTC', () => {
   const cv = `PRIYA MENON

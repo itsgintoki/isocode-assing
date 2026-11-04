@@ -7,13 +7,17 @@
     "doc": "docs"
   },
   "scripts": {
-    "start": "node backend/src/server.js",
+    "start": "npm --prefix backend start",
     "dev": "concurrently -k -p \"[{name}]\" -n \"BACKEND,FRONTEND\" -c \"blue.bold,green.bold\" \"npm run --prefix backend dev\" \"npm run --prefix frontend dev\"",
-    "build": "npm run --prefix frontend build",
-    "seed": "node backend/src/db/seed.js",
-    "test": "npm run --prefix backend test",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "seed": "npm --prefix backend run seed",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
+    "test": "npm --prefix backend test",
     "tdd:pdf": "node scripts/generate_tdd_pdf.js",
     "package-zip": "node scripts/generate_submission_zip.js"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "keywords": [
     "recruitment",

@@ -1,6 +1,6 @@
-const express = require('express');
-const db = require('../db/database');
-const { authMiddleware, requireRole } = require('../middleware/auth');
+import express from 'express';
+import db from '../db/database';
+import { authMiddleware, requireRole } from '../middleware/auth';
 
 const router = express.Router();
 const INTERNAL_ROLES = ['recruiter', 'delivery_head'];
@@ -128,4 +128,4 @@ router.get('/kpi-metrics', (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;

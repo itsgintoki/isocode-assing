@@ -101,12 +101,12 @@ SQLite (better-sqlite3, WAL)
 ```
 
 - **Frontend:** React 19, TypeScript, Vite 8, custom responsive CSS.
-- **Backend:** Node.js 22, Express 5.
+- **Backend:** Node.js 22, TypeScript 7, Express 5; compiled with `tsc` to `backend/dist`.
 - **Database:** SQLite with WAL mode; the schema is created on boot and seeded when empty.
 - **Auth:** `scrypt` password hashes, random session tokens stored as SHA-256 hashes, HttpOnly `shortlist_session` cookie.
 - **Parsing:** `pdf-parse` and `mammoth`; uploads stay in memory and are never written to disk.
 - **Scoring:** local deterministic evidence matcher. An optional LLM is used only for JD-to-scorecard intake, with a deterministic fallback.
-- **Tests:** Node's test runner and Supertest; 25 backend tests.
+- **Tests:** Node's test runner and Supertest, run through `tsx`; 26 backend tests.
 
 ## Testing
 
@@ -114,7 +114,7 @@ SQLite (better-sqlite3, WAL)
 npm test
 ```
 
-The suite uses a disposable `backend/data/test-screening.db` and covers parsing, evidence quoting, uncertainty, blind screening, PII masking, deduplication, auth cookies, rate limiting, role and tenant boundaries, the CV-view verification gate, scorecard validation, bulk upload, client decisions, and DPDP erasure.
+The suite uses a disposable `backend/data/test-screening.db` and covers PDF text extraction, parsing, evidence quoting, uncertainty, blind screening, PII masking, deduplication, auth cookies, rate limiting, role and tenant boundaries, the CV-view verification gate, scorecard validation, bulk upload, client decisions, and DPDP erasure.
 
 Manual checks against the running app covered sign-in for every role, scorecard re-scoring, a three-CV upload, verification and submission, client shortlist/pass/slot flows, erasure, and desktop/mobile layouts.
 

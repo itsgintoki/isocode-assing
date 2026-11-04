@@ -1,5 +1,5 @@
-const { v4: uuidv4 } = require('uuid');
-const db = require('../db/database');
+import { randomUUID } from 'node:crypto';
+import db from '../db/database';
 
 /**
  * DPDP Act 2023 Compliance Service
@@ -7,7 +7,7 @@ const db = require('../db/database');
  */
 
 function logAccess({ userId, userName, userRole, candidateId = null, requisitionId = null, action, ipAddress = '127.0.0.1', details = {} }) {
-  const logId = `AUD-${uuidv4().slice(0, 8)}`;
+  const logId = `AUD-${randomUUID().slice(0, 8)}`;
   
   db.prepare(`
     INSERT INTO access_audit_logs (id, user_id, user_name, user_role, candidate_id, requisition_id, action, ip_address, details_json, created_at)
@@ -113,11 +113,11 @@ function executeCandidateErasure({ candidateId, requestedBy, reason = 'Candidate
     success: true,
     candidateId,
     status: 'erased',
-    receipt: `DPDP-PURGE-${uuidv4().slice(0, 12).toUpperCase()}`
+    receipt: `DPDP-PURGE-${randomUUID().slice(0, 12).toUpperCase()}`
   };
 }
 
-module.exports = {
+export {
   logAccess,
   getAuditLogs,
   executeCandidateErasure

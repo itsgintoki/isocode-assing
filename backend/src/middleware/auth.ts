@@ -1,4 +1,4 @@
-const { getRequestToken, getUserForToken } = require('../services/auth_service');
+import { getRequestToken, getUserForToken } from '../services/auth_service';
 
 /**
  * Session-backed authentication. The browser sends an HttpOnly cookie;
@@ -35,7 +35,7 @@ function canClientAccessRequisition(user, requisition) {
   return requisition.client_company === user.company_name;
 }
 
-module.exports = {
+export {
   authMiddleware,
   requireRole,
   canClientAccessRequisition

@@ -1,8 +1,8 @@
-const express = require('express');
-const db = require('../db/database');
-const { authMiddleware, requireRole, canClientAccessRequisition } = require('../middleware/auth');
-const { maskCandidateForClient } = require('../services/pii_masker');
-const { logAccess } = require('../services/dpdp_service');
+import express from 'express';
+import db from '../db/database';
+import { authMiddleware, requireRole, canClientAccessRequisition } from '../middleware/auth';
+import { maskCandidateForClient } from '../services/pii_masker';
+import { logAccess } from '../services/dpdp_service';
 
 const router = express.Router();
 
@@ -280,4 +280,4 @@ router.post('/action', requireRole(['client_hiring_manager']), (req, res) => {
   return res.status(400).json({ error: 'Invalid action. Use shortlist, reject or propose_slots.' });
 });
 
-module.exports = router;
+export default router;

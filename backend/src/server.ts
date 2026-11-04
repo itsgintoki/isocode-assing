@@ -1,22 +1,23 @@
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
-require('dotenv').config();
+import path from 'node:path';
+import dotenv from 'dotenv';
+dotenv.config({ path: path.join(__dirname, '../../.env') });
+dotenv.config();
 
-const express = require('express');
-const cors = require('cors');
-const fs = require('fs');
+import express from 'express';
+import cors from 'cors';
+import fs from 'node:fs';
 
-const { ensureSeeded, seedDatabase } = require('./db/seed');
-const { authMiddleware, requireRole } = require('./middleware/auth');
-const { getRequestToken, destroySession, clearSessionCookie } = require('./services/auth_service');
+import { ensureSeeded, seedDatabase } from './db/seed';
+import { authMiddleware, requireRole } from './middleware/auth';
+import { getRequestToken, destroySession, clearSessionCookie } from './services/auth_service';
 
-const authRoutes = require('./routes/auth');
-const requisitionsRoutes = require('./routes/requisitions');
-const candidatesRoutes = require('./routes/candidates');
-const pipelineRoutes = require('./routes/pipeline');
-const clientRoutes = require('./routes/client');
-const dpdpRoutes = require('./routes/dpdp');
-const analyticsRoutes = require('./routes/analytics');
+import authRoutes from './routes/auth';
+import requisitionsRoutes from './routes/requisitions';
+import candidatesRoutes from './routes/candidates';
+import pipelineRoutes from './routes/pipeline';
+import clientRoutes from './routes/client';
+import dpdpRoutes from './routes/dpdp';
+import analyticsRoutes from './routes/analytics';
 
 ensureSeeded();
 
@@ -113,4 +114,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = app;
+export default app;

@@ -1,13 +1,25 @@
-const crypto = require('crypto');
-const db = require('../db/database');
+import crypto from 'node:crypto';
+import db from '../db/database';
 
-function calculateFileHash(bufferOrString) {
+function calculateFileHash(bufferOrString: string | Buffer): string {
   const hash = crypto.createHash('sha256');
   hash.update(bufferOrString);
   return hash.digest('hex');
 }
 
-function checkDuplicate({ fileHash, email, phone, candidateId = null }) {
+interface DuplicateLookup {
+  fileHash?: string | null;
+  email?: string;
+  phone?: string;
+  candidateId?: string | null;
+}
+
+function checkDuplicate({
+  fileHash = null,
+  email = '',
+  phone = '',
+  candidateId = null
+}: DuplicateLookup = {}) {
   // Check exact file hash duplicate
   if (fileHash) {
     const existingByHash = db.prepare(`
@@ -78,7 +90,7 @@ function checkDuplicate({ fileHash, email, phone, candidateId = null }) {
   };
 }
 
-module.exports = {
+export {
   calculateFileHash,
   checkDuplicate
 };

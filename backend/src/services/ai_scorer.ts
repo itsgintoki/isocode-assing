@@ -597,7 +597,7 @@ Output strict JSON with fields:
   };
 }
 
-module.exports = {
+export {
   scoreCandidate,
   extractScorecardFromJD,
   extractScorecardWithAI,

@@ -1,7 +1,7 @@
-const express = require('express');
-const db = require('../db/database');
-const { authMiddleware } = require('../middleware/auth');
-const {
+import express from 'express';
+import db from '../db/database';
+import { authMiddleware } from '../middleware/auth';
+import {
   hashPassword,
   verifyPassword,
   createSession,
@@ -10,7 +10,7 @@ const {
   publicUser,
   setSessionCookie,
   clearSessionCookie
-} = require('../services/auth_service');
+} from '../services/auth_service';
 
 const router = express.Router();
 
@@ -98,4 +98,4 @@ router.post('/logout', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
-module.exports = router;
+export default router;
