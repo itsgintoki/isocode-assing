@@ -26,7 +26,7 @@ SQLite is embedded through `better-sqlite3`; no database server is required. The
 ### 2.1 Clone and install
 
 ```bash
-git clone <public-repository-url>
+git clone https://github.com/itsgintoki/isocode-assing.git
 cd isocode-assing
 
 npm install

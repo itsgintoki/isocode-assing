@@ -58,12 +58,9 @@ async function createSubmissionZip() {
     throw new Error(`submission.zip is ${(size / 1024 / 1024).toFixed(1)} MB, over the 25 MB limit.`);
   }
 
-  const listing = execFileSync('unzip', ['-l', zipOutput], { encoding: 'utf8' });
-  const files = listing
+  const files = execFileSync('unzip', ['-Z1', zipOutput], { encoding: 'utf8' })
     .split('\n')
-    .map((line) => line.trim().split(/\s+/))
-    .filter((parts) => parts.length === 4 && /\d{2}-\d{2}-\d{4}/.test(parts[1]))
-    .map((parts) => parts[3])
+    .map((line) => line.trim())
     .filter(Boolean)
     .sort();
 
@@ -77,7 +74,7 @@ async function createSubmissionZip() {
   console.log(`File: ${zipOutput}`);
   console.log(`Size: ${(size / 1024).toFixed(1)} KB (limit: 25 MB)`);
   console.log('Archive contents:');
-  console.log(listing.trim());
+  console.log(files.join('\n'));
   console.log('=============================================\n');
 }
 

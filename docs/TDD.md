@@ -7,7 +7,7 @@
 **Date:** November 2026  
 **Document version:** 2.0
 
-**Public repository:** `https://github.com/[owner]/shortlist-screening` — replace with the final public URL before submission.  
+**Public repository:** `https://github.com/itsgintoki/isocode-assing`  
 **Live application:** Not claimed. The project runs locally or in Docker using the steps in `deployment.md`.
 
 ---

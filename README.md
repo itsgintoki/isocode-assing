@@ -34,7 +34,7 @@ Nothing is auto-rejected. Low scorers stay in the ranked list and remain searcha
 Requirements: Node.js 22+, npm 9+, and Chrome if you want to rebuild the TDD PDF.
 
 ```bash
-git clone <public-repository-url>
+git clone https://github.com/itsgintoki/isocode-assing.git
 cd isocode-assing
 
 npm install
